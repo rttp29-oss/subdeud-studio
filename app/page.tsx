@@ -90,10 +90,13 @@ export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [rndScale, setRndScale] = useState(1);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
+    
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    setIsMobileDevice(isMobile);
 
     let frameId: number;
     const updateTimeSmoothly = () => {
@@ -102,10 +105,9 @@ export default function Home() {
     };
     frameId = requestAnimationFrame(updateTimeSmoothly);
 
-    // 🌟 อัปเกรดระบบ Scale จอวิดีโอ: ให้ใหญ่เต็มที่ในคอม และย่อเฉพาะมือถือ
     const updateScale = () => {
-      if (window.innerWidth < 768) setRndScale(0.6); // มือถือ
-      else setRndScale(1); // คอมพิวเตอร์และไอแพดใหญ่
+      if (window.innerWidth < 768) setRndScale(0.6); 
+      else setRndScale(1); 
     };
     updateScale();
     window.addEventListener('resize', updateScale);
@@ -318,25 +320,24 @@ export default function Home() {
     if (!ctx) return;
 
     let vidWidth = video.videoWidth || 720; let vidHeight = video.videoHeight || 1280; 
-    
-    // 🌟 ปรับ Bitrate ความชัดตามที่คุณขอเป๊ะๆ 
-    let targetBitrate = 10000000; // ต้นฉบับ: 10 Mbps (ชัดกริบ และไม่กระตุก)
+    let targetBitrate = 10000000; 
 
     if (exportQuality === "1080") {
         const ratio = vidWidth / vidHeight;
         if (vidWidth > vidHeight) { vidWidth = 1920; vidHeight = Math.round(1920 / ratio); } else { vidHeight = 1920; vidWidth = Math.round(1920 * ratio); }
-        targetBitrate = 6000000; // 1080p: 6 Mbps
+        targetBitrate = 6000000; 
     } else if (exportQuality === "720") {
         const ratio = vidWidth / vidHeight;
         if (vidWidth > vidHeight) { vidWidth = 1280; vidHeight = Math.round(1280 / ratio); } else { vidHeight = 1280; vidWidth = Math.round(1280 * ratio); }
-        targetBitrate = 3000000; // 720p: 3 Mbps
+        targetBitrate = 3000000; 
     }
 
     canvas.width = vidWidth; canvas.height = vidHeight;
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
 
     const scale = vidWidth / 340;
-    const canvasStream = canvas.captureStream(30); // ใช้ 30 FPS เพื่อให้ลื่นไหลเหมือนต้นฉบับ ไม่กระตุก
+    // 🌟 อัปเกรด: ดันเฟรมเรตการแคปเจอร์หน้าจอกลับมาเป็น 60 FPS ตามคำขอ
+    const canvasStream = canvas.captureStream(60); 
     let audioTracks: MediaStreamTrack[] = [];
     try {
       // @ts-ignore
@@ -346,7 +347,6 @@ export default function Home() {
 
     const combinedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
     
-    // 🌟 บังคับเข้ารหัสเป็น H264 (ซึ่ง LINE / FB / iOS รองรับ) เพื่อให้ไฟล์ที่ได้เป็น MP4 ที่สมบูรณ์
     let mimeType = 'video/webm;codecs=h264';
     if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('video/mp4')) {
         mimeType = 'video/mp4';
@@ -358,7 +358,7 @@ export default function Home() {
     try {
         mediaRecorder = new MediaRecorder(combinedStream, recorderOptions);
     } catch (e) {
-        mediaRecorder = new MediaRecorder(combinedStream); // Fallback
+        mediaRecorder = new MediaRecorder(combinedStream);
     }
     
     const chunks: Blob[] = [];
@@ -366,7 +366,6 @@ export default function Home() {
     mediaRecorder.onstop = () => {
       if (cancelRenderRef.current) return;
       
-      // 🌟 บังคับใส่เป็นไฟล์ .mp4 เสมอ เพื่อให้เอาไปส่งต่อใน LINE ได้ง่าย
       const blob = new Blob(chunks, { type: "video/mp4" });
       const downloadUrl = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = downloadUrl; a.download = `subdeud_${exportQuality}_${Date.now()}.mp4`; a.click();
@@ -463,7 +462,6 @@ export default function Home() {
           }
         };
 
-        // 🌟 แก้บั๊กพื้นหลังหายตอน Export ในโหมดไฮไลต์!
         if (styleToUse.hasBackground && !(activeMode === 'highlight' && styleToUse.karaokeEffect === 'bgHighlight')) {
             const pX = styleToUse.bgPaddingX * scale * animScale; 
             const pY = styleToUse.bgPaddingY * scale * animScale;
@@ -540,7 +538,6 @@ export default function Home() {
                 applyShadowAndStroke(); ctx.strokeText(activeText, textX, textY); ctx.fillStyle = "#FFFFFF"; ctx.fillText(activeText, textX, textY);
             }
         } else {
-            // ไม่ใช่ highlight โหมด
             applyShadowAndStroke(); ctx.strokeText(activeText, textX, textY); ctx.fillStyle = styleToUse.textColor; ctx.fillText(activeText, textX, textY);
         }
 
@@ -663,35 +660,20 @@ export default function Home() {
               <span className="text-blue-400 font-mono text-[10px] md:text-sm font-bold bg-blue-900/30 px-2 py-1 md:px-3 rounded-lg">⏱️ {currentTime.toFixed(1)} s</span>
             </div>
             
-            {/* 🌟 ปรับกล่องวิดีโอให้ใช้ scale คำนวณแบบ 100% สำหรับคอมพิวเตอร์ และย่อขนาดเฉพาะจอมือถือเล็กๆ เท่านั้น */}
             <div className={`mx-auto shrink-0 overflow-hidden border-2 border-gray-700 rounded-xl relative shadow-2xl transition-all ${showGreenScreen ? 'bg-[#00FF00]' : 'bg-black'}`}
                  style={{ width: rndScale * 340, height: rndScale * 604 }}>
                  
               <div style={{ transform: `scale(${rndScale})`, transformOrigin: 'top left', width: 340, height: 604, position: 'absolute', top: 0, left: 0 }}>
                     {!showGreenScreen && (
                       videoUrl ? (
-                        <>
+                          // 🌟 คืนชีพแผงควบคุมวิดีโอแบบต้นฉบับครับ!
                           <video 
                             ref={videoRef} src={videoUrl} 
                             onTimeUpdate={() => { if (videoRef.current?.paused) setCurrentTime(videoRef.current.currentTime); }} 
-                            onPlay={() => setIsPlaying(true)}
-                            onPause={() => setIsPlaying(false)}
-                            className="absolute inset-0 w-full h-full object-cover cursor-pointer" 
-                            controls={false}
+                            className="absolute inset-0 w-full h-full object-cover" 
+                            controls={true} // เปิดใช้งานแถบเลื่อนแบบเต็มตัว
                             playsInline 
-                            onClick={(e) => isPlaying ? e.currentTarget.pause() : e.currentTarget.play()}
                           />
-                          
-                          {!isPlaying && (
-                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10" onClick={(e) => { e.stopPropagation(); videoRef.current?.play(); }}>
-                                <div className="bg-black/60 hover:bg-black/80 text-white rounded-full p-6 backdrop-blur-sm transition-all transform scale-100 hover:scale-110 pointer-events-auto cursor-pointer shadow-lg">
-                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 ml-2" viewBox="0 0 20 20" fill="currentColor">
-                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                                   </svg>
-                                </div>
-                             </div>
-                          )}
-                        </>
                       ) : (
                         <div className="absolute inset-0 bg-gray-950 flex flex-col items-center justify-center text-gray-600"><span className="text-base font-bold">รออัปโหลดคลิป...</span></div>
                       )
