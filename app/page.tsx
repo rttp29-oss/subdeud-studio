@@ -322,15 +322,15 @@ export default function Home() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let vidWidth = video.videoWidth || 720; let vidHeight = video.videoHeight || 1280; let targetBitrate = 50000000; 
+    let vidWidth = video.videoWidth || 720; let vidHeight = video.videoHeight || 1280; let targetBitrate = 10000000; 
     if (exportQuality === "1080") {
         const ratio = vidWidth / vidHeight;
         if (vidWidth > vidHeight) { vidWidth = 1920; vidHeight = Math.round(1920 / ratio); } else { vidHeight = 1920; vidWidth = Math.round(1920 * ratio); }
-        targetBitrate = 15000000; 
+        targetBitrate = 7500000; 
     } else if (exportQuality === "720") {
         const ratio = vidWidth / vidHeight;
         if (vidWidth > vidHeight) { vidWidth = 1280; vidHeight = Math.round(1280 / ratio); } else { vidHeight = 1280; vidWidth = Math.round(1280 * ratio); }
-        targetBitrate = 5000000; 
+        targetBitrate = 3500000; 
     }
 
     canvas.width = vidWidth; canvas.height = vidHeight;
