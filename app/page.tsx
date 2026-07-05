@@ -89,7 +89,8 @@ export default function Home() {
   const [isMounted, setIsMounted] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
-  const [rndScale, setRndScale] = useState(1); // 🌟 ตัวแปรแก้บั๊กลากตัวอักษรเพี้ยนบนมือถือ
+  const [rndScale, setRndScale] = useState(1);
+  const [isPlaying, setIsPlaying] = useState(false); // 🌟 สถานะปุ่มกดเล่นวิดีโอใหม่
 
   useEffect(() => {
     setIsMounted(true);
@@ -100,7 +101,6 @@ export default function Home() {
     };
     frameId = requestAnimationFrame(updateTimeSmoothly);
 
-    // เช็กขนาดหน้าจอเพื่อปรับความแม่นยำตอนลากตัวอักษร
     const updateScale = () => {
       if (window.innerWidth < 640) setRndScale(0.55);
       else if (window.innerWidth < 768) setRndScale(0.7);
@@ -190,7 +190,6 @@ export default function Home() {
     } catch { return { start: "0", end: "3" }; }
   };
 
-  // 🌟 อัปเกรดระบบดึงข้อความจากการปาด (รองรับมือถือ 100%)
   const extractHookFromScene = (scene: any) => {
     const textarea = document.getElementById(`textarea-${scene.id}`) as HTMLTextAreaElement;
     let selectedText = "";
@@ -305,11 +304,10 @@ export default function Home() {
   const handleExportVideo = async () => {
     if (!videoRef.current || (!videoFile && !videoUrl)) return;
     
-    // แจ้งเตือนข้อจำกัด iOS / Safari
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
     if (isIOS || isSafari) {
-       alert("⚠️ คำเตือน: ระบบ iPhone/iPad หรือ Safari บล็อกการอัดเสียงผ่านหน้าเว็บ \n\nคลิปที่จะได้จะไม่มีเสียง แนะนำให้เปิดเว็บผ่านเบราว์เซอร์ Chrome บนคอมพิวเตอร์ เพื่อให้ได้คลิปที่สมบูรณ์ 100% ครับ");
+       alert("⚠️ คำเตือน: ระบบ iPhone/iPad หรือ Safari บล็อกการอัดเสียงและเรนเดอร์ผ่านหน้าเว็บ \n\nคลิปที่ได้อาจไม่มีเสียงหรือเรนเดอร์ไม่ผ่าน แนะนำให้เปิดเว็บผ่าน Google Chrome บนคอมพิวเตอร์ เพื่อให้ได้คลิปที่สมบูรณ์ 100% ครับ");
     }
 
     const video = videoRef.current;
@@ -318,7 +316,7 @@ export default function Home() {
     cancelRenderRef.current = false;
     setIsRendering(true);
     setIsLoading(true); 
-    setLoadingText(`🎬 ระบบกำลังเรนเดอร์ความละเอียด: ${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'} ...\n(ถ้าเปอร์เซ็นต์ไม่ขยับเลย แปลว่ามือถือรุ่นนี้ไม่รองรับ ให้กดยกเลิกแล้วทำในคอมนะครับ)`);
+    setLoadingText(`🎬 ระบบกำลังเรนเดอร์ความละเอียด: ${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'} ...\n(ถ้าเปอร์เซ็นต์ไม่ขยับเลย แปลว่ามือถือบล็อกระบบนี้ ให้กดยกเลิกแล้วทำในคอมนะครับ)`);
 
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
@@ -348,7 +346,15 @@ export default function Home() {
     } catch (e) { console.error("Audio grab failed", e); }
 
     const combinedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
-    const recorderOptions = { mimeType: "video/webm;codecs=vp8", videoBitsPerSecond: targetBitrate, audioBitsPerSecond: 128000 };
+    
+    // 🌟 ระบบงัดข้อกับ iOS (บังคับใช้ MP4 ถ้าทำได้)
+    let mimeType = 'video/webm;codecs=vp8';
+    if (typeof MediaRecorder !== 'undefined') {
+        if (MediaRecorder.isTypeSupported('video/mp4')) mimeType = 'video/mp4'; 
+        else if (MediaRecorder.isTypeSupported('video/webm;codecs=h264')) mimeType = 'video/webm;codecs=h264';
+    }
+    
+    const recorderOptions = { mimeType, videoBitsPerSecond: targetBitrate, audioBitsPerSecond: 128000 };
     
     let mediaRecorder: MediaRecorder;
     try {
@@ -361,9 +367,11 @@ export default function Home() {
     mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
     mediaRecorder.onstop = () => {
       if (cancelRenderRef.current) return;
-      const blob = new Blob(chunks, { type: "video/mp4" });
+      
+      const fileExt = mediaRecorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
+      const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "video/mp4" });
       const downloadUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = downloadUrl; a.download = `subdeud_${exportQuality}_${Date.now()}.mp4`; a.click();
+      const a = document.createElement("a"); a.href = downloadUrl; a.download = `subdeud_${exportQuality}_${Date.now()}.${fileExt}`; a.click();
       setIsLoading(false);
       setIsRendering(false);
     };
@@ -387,7 +395,6 @@ export default function Home() {
       const t = video.currentTime;
       let activeText = ""; let styleToUse = currentStyle;
       
-      // 🌟 อัปเกรดระบบคำนวณแกน X Y ตอน Export ให้เป๊ะเท่าหน้าพรีวิว 100%
       let textX = vidWidth / 2; let textY = 0;
       let karaokeProgress = 0; let sceneStartTime = 0; let sceneEndTime = 0;
       
@@ -537,7 +544,7 @@ export default function Home() {
         ctx.restore();
       }
 
-      setLoadingText(`🎬 กำลังถักทอคลิป (${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'}): ${((t / video.duration) * 100).toFixed(0)}%\n(ถ้าค้างนาน สามารถกดยกเลิกได้ครับ)`);
+      setLoadingText(`🎬 กำลังถักทอคลิป (${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'}): ${((t / video.duration) * 100).toFixed(0)}%\n(ถ้าเปอร์เซ็นต์ไม่ขยับเลย แปลว่ามือถือรุ่นนี้บล็อกระบบ ให้กดยกเลิกแล้วทำในคอมนะครับ)`);
       requestAnimationFrame(renderFrame);
     };
 
@@ -659,11 +666,29 @@ export default function Home() {
                   <div className={`w-full h-full border-2 border-gray-700 rounded-xl relative overflow-hidden shadow-2xl ${showGreenScreen ? 'bg-[#00FF00]' : 'bg-black'}`}>
                     {!showGreenScreen && (
                       videoUrl ? (
-                        <video 
-                          ref={videoRef} src={videoUrl} 
-                          onTimeUpdate={() => { if (videoRef.current?.paused) setCurrentTime(videoRef.current.currentTime); }} 
-                          className="absolute inset-0 w-full h-full object-cover" controls playsInline 
-                        />
+                        <>
+                          <video 
+                            ref={videoRef} src={videoUrl} 
+                            onTimeUpdate={() => { if (videoRef.current?.paused) setCurrentTime(videoRef.current.currentTime); }} 
+                            onPlay={() => setIsPlaying(true)}
+                            onPause={() => setIsPlaying(false)}
+                            className="absolute inset-0 w-full h-full object-cover cursor-pointer" 
+                            controls={false} /* 🌟 ซ่อนปุ่มเดิมที่เพี้ยนบนมือถือทิ้งไป */
+                            playsInline 
+                            onClick={(e) => isPlaying ? e.currentTarget.pause() : e.currentTarget.play()}
+                          />
+                          
+                          {/* 🌟 ปุ่ม Play อัจฉริยะ โชว์ขึ้นมาเมื่อกดหยุด */}
+                          {!isPlaying && (
+                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10" onClick={(e) => { e.stopPropagation(); videoRef.current?.play(); }}>
+                                <div className="bg-black/60 hover:bg-black/80 text-white rounded-full p-6 backdrop-blur-sm transition-all transform scale-100 hover:scale-110 pointer-events-auto cursor-pointer shadow-lg">
+                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 ml-2" viewBox="0 0 20 20" fill="currentColor">
+                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                                   </svg>
+                                </div>
+                             </div>
+                          )}
+                        </>
                       ) : (
                         <div className="absolute inset-0 bg-gray-950 flex flex-col items-center justify-center text-gray-600"><span className="text-base font-bold">รออัปโหลดคลิป...</span></div>
                       )
@@ -672,7 +697,7 @@ export default function Home() {
                     {activeMode === 'hook' && activeHookForPreview && (
                       <Rnd
                         key={`hook-${activeHookForPreview.id}`} enableResizing={false} position={activeHookForPreview.position}
-                        scale={rndScale} // 🌟 แก้ลากแล้วตำแหน่งเพี้ยนบนมือถือ
+                        scale={rndScale} 
                         onDragStop={(e, d) => { setSavedHooks(hooks => hooks.map(h => h.id === activeHookForPreview.id ? { ...h, position: {x: d.x, y: d.y} } : h)) }}
                         bounds="parent" className="z-20 cursor-move pointer-events-auto"
                       >
@@ -693,7 +718,7 @@ export default function Home() {
                       <Rnd
                       key={`scene-${activeSceneForPreview.id}`} 
                       enableResizing={false} position={globalSubPosition}
-                      scale={rndScale} // 🌟 แก้ลากแล้วตำแหน่งเพี้ยนบนมือถือ
+                      scale={rndScale} 
                       onDragStop={(e, d) => setGlobalSubPosition({ x: d.x, y: d.y })} 
                       bounds="parent" className="z-20 cursor-move pointer-events-auto"
                     >
