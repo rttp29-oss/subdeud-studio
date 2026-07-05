@@ -20,6 +20,51 @@ const getWords = (text: string) => {
   return text.split(/(?=\s)|(?<=\s)/); 
 };
 
+// 🌟 เพิ่มฟังก์ชันสกัดไฟล์เสียงและบีบอัด (Downsample to 16kHz Mono)
+const bufferToWav = (buffer: AudioBuffer, targetSampleRate: number) => {
+  const numOfChan = 1; // บังคับเป็น Mono เพื่อลดขนาดไฟล์ลงครึ่งหนึ่ง
+  const length = buffer.length * 2 + 44;
+  const bufferArray = new ArrayBuffer(length);
+  const view = new DataView(bufferArray);
+  let pos = 0;
+
+  const setUint16 = (data: number) => { view.setUint16(pos, data, true); pos += 2; };
+  const setUint32 = (data: number) => { view.setUint32(pos, data, true); pos += 4; };
+  const writeString = (str: string) => { for (let i = 0; i < str.length; i++) { view.setUint8(pos, str.charCodeAt(i)); pos++; } };
+
+  writeString('RIFF'); setUint32(length - 8); writeString('WAVE');
+  writeString('fmt '); setUint32(16); setUint16(1); setUint16(numOfChan);
+  setUint32(targetSampleRate); setUint32(targetSampleRate * 2); setUint16(2); setUint16(16);
+  writeString('data'); setUint32(length - pos - 4);
+
+  const channelData = buffer.getChannelData(0);
+  let offset = 0;
+  while (pos < length) {
+      let sample = Math.max(-1, Math.min(1, channelData[offset]));
+      sample = sample < 0 ? sample * 32768 : sample * 32767;
+      view.setInt16(pos, sample, true); 
+      pos += 2;
+      offset++;
+  }
+  return new Blob([bufferArray], { type: 'audio/wav' });
+};
+
+const extractAudioFast = async (file: File): Promise<Blob> => {
+  const arrayBuffer = await file.arrayBuffer();
+  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  
+  const targetSampleRate = 16000; // 16kHz เพียงพอสำหรับ AI ถอดเสียง และไฟล์เล็กมาก
+  const offlineCtx = new OfflineAudioContext(1, audioBuffer.duration * targetSampleRate, targetSampleRate);
+  const source = offlineCtx.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(offlineCtx.destination);
+  source.start();
+  const renderedBuffer = await offlineCtx.startRendering();
+  
+  return bufferToWav(renderedBuffer, targetSampleRate);
+};
+
 const PresetColors = ({ onSelect }: { onSelect: (c: string) => void }) => (
   <div className="flex gap-2 ml-auto">
     {["#FF0000", "#FFD700", "#00FF00", "#0000FF", "#FFFFFF", "#000000"].map(c => (
@@ -149,11 +194,25 @@ export default function Home() {
 
   const handleTranscribe = async () => {
     if (!videoFile) return;
-    setIsLoading(true); setLoadingText(`🧠 AI กำลังถอดเสียงและสร้างสคริปต์ให้ครบทุกโหมด...`); 
+    setIsLoading(true); 
     setSourceScenes([]); setAutoScenes([]);
 
     try {
-      const formData = new FormData(); formData.append("video", videoFile);
+      // 🌟 1. ดึงเฉพาะเสียงจากวิดีโอ (เพื่อให้ไฟล์เล็กลงทะลุด่าน Vercel)
+      setLoadingText(`🎵 กำลังสกัดไฟล์เสียงจากวิดีโอ...`); 
+      const audioBlob = await extractAudioFast(videoFile);
+      
+      // ดักจับกรณีวิดีโอยาวมากๆ จนไฟล์เสียงยังเกิน 4MB
+      if (audioBlob.size > 4.2 * 1024 * 1024) {
+         setLoadingText("⚠️ ไฟล์ยาวเกินไป (Vercel จำกัด 4.5MB) ลองตัดคลิปให้สั้นลงครับ");
+         setTimeout(() => setIsLoading(false), 4000);
+         return;
+      }
+
+      setLoadingText(`🧠 AI กำลังถอดเสียงและสร้างสคริปต์...`); 
+      const formData = new FormData(); 
+      formData.append("video", audioBlob, "audio.wav"); // ส่งไฟล์เสียงไปแทน
+      
       const response = await fetch("/api/transcribe", { method: "POST", body: formData });
       const data = await response.json();
       
@@ -168,7 +227,10 @@ export default function Home() {
         setLoadingText("❌ เกิดข้อผิดพลาด: " + (data.error || "ถอดเสียงไม่ได้"));
         setTimeout(() => setIsLoading(false), 3000);
       }
-    } catch (err: any) { setLoadingText("❌ เชื่อมต่อหลังบ้านขัดข้อง: " + err.message); setTimeout(() => setIsLoading(false), 3000); } 
+    } catch (err: any) { 
+      setLoadingText("❌ เชื่อมต่อหลังบ้านขัดข้อง: " + err.message); 
+      setTimeout(() => setIsLoading(false), 3000); 
+    } 
   };
 
   const updateAutoSceneText = (id: number, text: string) => setAutoScenes(scenes => scenes.map(s => s.id === id ? { ...s, text } : s));
@@ -486,11 +548,9 @@ export default function Home() {
         </div>
       )}
 
-      {/* 📱 Wrapper หลัก: คืนความสวยงามอลังการให้จอคอม แต่ยังเลื่อนพับได้บนมือถือ */}
       <div className="min-h-screen md:h-screen w-full bg-[#0f172a] text-white p-2 md:p-4 flex flex-col md:overflow-hidden preview-container">
         
         <div className="shrink-0 mb-4 pb-2 border-b border-gray-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-          {/* คืน Title เต็มๆ บนจอคอม */}
           <h2 className="text-xl md:text-2xl font-bold text-yellow-400">🚀 SubDeud Studio - 60FPS Engine</h2>
           <div className="flex gap-2 md:gap-4 items-center w-full sm:w-auto justify-between sm:justify-end">
             <label className="flex items-center gap-2 cursor-pointer bg-green-900/30 text-green-400 py-1 px-3 rounded-full border border-green-700 hover:bg-green-800/40 transition">
@@ -613,7 +673,6 @@ export default function Home() {
                 <button onClick={() => setActiveMode('highlight')} className={`py-2 md:py-3 px-1 md:px-4 rounded-lg font-bold text-[10px] md:text-sm transition-all ${activeMode === 'highlight' ? 'bg-purple-600 shadow-lg' : 'bg-gray-900 text-gray-400 hover:bg-gray-700'}`}>🎤 โหมด 3: ไฮไลต์</button>
               </div>
 
-              {/* คืนข้อความปุ่มเต็มๆ ให้จอคอม */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3 w-full flex-1">
                 <div className="relative w-full h-full group">
                   <input type="file" accept="video/*" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"/>
