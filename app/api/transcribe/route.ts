@@ -1,5 +1,6 @@
-
-export const maxDuration = 60; // ขอขยายเวลาประมวลผลเป็น 60 วินาทีimport { NextResponse } from "next/server";
+export const maxDuration = 60;
+import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GoogleAIFileManager } from "@google/generative-ai/server";
 import fs from "fs";
