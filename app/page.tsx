@@ -20,9 +20,9 @@ const getWords = (text: string) => {
   return text.split(/(?=\s)|(?<=\s)/); 
 };
 
-// 🌟 เพิ่มฟังก์ชันสกัดไฟล์เสียงและบีบอัด (Downsample to 16kHz Mono)
+// สกัดไฟล์เสียง
 const bufferToWav = (buffer: AudioBuffer, targetSampleRate: number) => {
-  const numOfChan = 1; // บังคับเป็น Mono เพื่อลดขนาดไฟล์ลงครึ่งหนึ่ง
+  const numOfChan = 1; 
   const length = buffer.length * 2 + 44;
   const bufferArray = new ArrayBuffer(length);
   const view = new DataView(bufferArray);
@@ -54,7 +54,7 @@ const extractAudioFast = async (file: File): Promise<Blob> => {
   const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
   const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
   
-  const targetSampleRate = 16000; // 16kHz เพียงพอสำหรับ AI ถอดเสียง และไฟล์เล็กมาก
+  const targetSampleRate = 16000; 
   const offlineCtx = new OfflineAudioContext(1, audioBuffer.duration * targetSampleRate, targetSampleRate);
   const source = offlineCtx.createBufferSource();
   source.buffer = audioBuffer;
@@ -107,9 +107,10 @@ export default function Home() {
   const [sourceScenes, setSourceScenes] = useState<Scene[]>([]); 
   const [autoScenes, setAutoScenes] = useState<Scene[]>([]); 
   
-  const [statusMessage, setStatusMessage] = useState("รออัปโหลดวิดีโอ...");
   const [isLoading, setIsLoading] = useState(false);
   const [loadingText, setLoadingText] = useState("");
+  const [isRendering, setIsRendering] = useState(false); // เช็กสถานะเรนเดอร์
+  const cancelRenderRef = useRef(false); // ตัวแปรสำหรับกดยกเลิกเรนเดอร์
 
   const [savedHooks, setSavedHooks] = useState<any[]>([]); 
   const [selectedHookId, setSelectedHookId] = useState<number | null>(null); 
@@ -189,29 +190,27 @@ export default function Home() {
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) { setVideoFile(file); setVideoUrl(URL.createObjectURL(file)); setStatusMessage("อัปโหลดสำเร็จ! กดปุ่มเริ่มถอดเสียงได้เลย"); }
+    if (file) { setVideoFile(file); setVideoUrl(URL.createObjectURL(file)); }
   };
 
   const handleTranscribe = async () => {
     if (!videoFile) return;
-    setIsLoading(true); 
+    setIsLoading(true); setIsRendering(false);
     setSourceScenes([]); setAutoScenes([]);
 
     try {
-      // 🌟 1. ดึงเฉพาะเสียงจากวิดีโอ (เพื่อให้ไฟล์เล็กลงทะลุด่าน Vercel)
       setLoadingText(`🎵 กำลังสกัดไฟล์เสียงจากวิดีโอ...`); 
       const audioBlob = await extractAudioFast(videoFile);
       
-      // ดักจับกรณีวิดีโอยาวมากๆ จนไฟล์เสียงยังเกิน 4MB
       if (audioBlob.size > 4.2 * 1024 * 1024) {
          setLoadingText("⚠️ ไฟล์ยาวเกินไป (Vercel จำกัด 4.5MB) ลองตัดคลิปให้สั้นลงครับ");
          setTimeout(() => setIsLoading(false), 4000);
          return;
       }
 
-      setLoadingText(`🧠 AI กำลังถอดเสียงและสร้างสคริปต์...`); 
+      setLoadingText(`🧠 AI กำลังถอดเสียงและสร้างสคริปต์ (รอประมาณ 10-30 วิ)...`); 
       const formData = new FormData(); 
-      formData.append("video", audioBlob, "audio.wav"); // ส่งไฟล์เสียงไปแทน
+      formData.append("video", audioBlob, "audio.wav"); 
       
       const response = await fetch("/api/transcribe", { method: "POST", body: formData });
       const data = await response.json();
@@ -268,11 +267,26 @@ export default function Home() {
     }));
   };
 
+  // ฟังก์ชันกดยกเลิกเรนเดอร์
+  const handleCancelRender = () => {
+    cancelRenderRef.current = true;
+    setLoadingText("🛑 กำลังยกเลิกการเรนเดอร์...");
+    setTimeout(() => {
+      setIsLoading(false);
+      setIsRendering(false);
+      if (videoRef.current) videoRef.current.pause();
+    }, 1000);
+  };
+
   const handleExportVideo = async () => {
     if (!videoRef.current || (!videoFile && !videoUrl)) return;
     const video = videoRef.current;
     video.pause(); video.currentTime = 0;
-    setIsLoading(true); setLoadingText(`🎬 ระบบกำลังเรนเดอร์ความละเอียด: ${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'} ...`);
+    
+    cancelRenderRef.current = false;
+    setIsRendering(true);
+    setIsLoading(true); 
+    setLoadingText(`🎬 ระบบกำลังเรนเดอร์ความละเอียด: ${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'} ...\n(มือถือบางรุ่นอาจไม่รองรับฟีเจอร์นี้ แนะนำให้ใช้คอมพิวเตอร์ครับ)`);
 
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
@@ -303,20 +317,38 @@ export default function Home() {
 
     const combinedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
     const recorderOptions = { mimeType: "video/webm;codecs=h264", videoBitsPerSecond: targetBitrate, audioBitsPerSecond: 128000 };
-    const mediaRecorder = new MediaRecorder(combinedStream, recorderOptions);
+    
+    let mediaRecorder: MediaRecorder;
+    try {
+        mediaRecorder = new MediaRecorder(combinedStream, recorderOptions);
+    } catch (e) {
+        // Fallback for browsers that don't support h264 webm
+        mediaRecorder = new MediaRecorder(combinedStream);
+    }
     
     const chunks: Blob[] = [];
     mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
     mediaRecorder.onstop = () => {
+      if (cancelRenderRef.current) return; // ถ้ากดยกเลิก ไม่ต้องโหลดไฟล์
       const blob = new Blob(chunks, { type: "video/mp4" });
       const downloadUrl = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = downloadUrl; a.download = `subdeud_${exportQuality}_${Date.now()}.mp4`; a.click();
       setIsLoading(false);
+      setIsRendering(false);
     };
 
-    mediaRecorder.start(); video.play();
+    mediaRecorder.start(); 
+    video.play().catch(e => {
+        setLoadingText("❌ เกิดข้อผิดพลาดในการเล่นวิดีโอ กรุณายกเลิก");
+    });
 
     const renderFrame = () => {
+      // ดักจับการกดยกเลิก
+      if (cancelRenderRef.current) {
+          mediaRecorder.stop();
+          return;
+      }
+
       if (video.paused || video.ended) { if (video.ended) mediaRecorder.stop(); return; }
 
       if (showGreenScreen) { ctx.fillStyle = "#00FF00"; ctx.fillRect(0, 0, vidWidth, vidHeight); } 
@@ -463,7 +495,7 @@ export default function Home() {
         ctx.restore();
       }
 
-      setLoadingText(`🎬 กำลังถักทอคลิป (${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'}): ${((t / video.duration) * 100).toFixed(0)}%`);
+      setLoadingText(`🎬 กำลังถักทอคลิป (${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'}): ${((t / video.duration) * 100).toFixed(0)}%\n(ถ้าจาค้างนานเกินไป สามารถกดยกเลิกได้ครับ)`);
       requestAnimationFrame(renderFrame);
     };
 
@@ -542,19 +574,26 @@ export default function Home() {
       `}} />
 
       {isLoading && (
-        <div className="fixed inset-0 z-50 bg-gray-950/95 backdrop-blur-sm flex flex-col items-center justify-center">
+        <div className="fixed inset-0 z-[100] bg-gray-950/95 backdrop-blur-sm flex flex-col items-center justify-center p-4">
           <div className="w-16 h-16 border-4 border-blue-500 border-t-yellow-400 rounded-full animate-spin mb-6"></div>
-          <h2 className="text-2xl font-bold text-white text-center px-4 leading-relaxed max-w-xl">{loadingText}</h2>
+          <h2 className="text-xl md:text-2xl font-bold text-white text-center leading-relaxed max-w-xl whitespace-pre-line">{loadingText}</h2>
+          
+          {/* ปุ่มยกเลิกเรนเดอร์ */}
+          {isRendering && (
+             <button onClick={handleCancelRender} className="mt-8 px-6 py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-full shadow-lg border-2 border-red-400 transition transform hover:scale-105 active:scale-95">
+               ❌ ยกเลิกการเรนเดอร์
+             </button>
+          )}
         </div>
       )}
 
-      <div className="min-h-screen md:h-screen w-full bg-[#0f172a] text-white p-2 md:p-4 flex flex-col md:overflow-hidden preview-container">
+      <div className="min-h-screen md:h-screen w-full bg-[#0f172a] text-white flex flex-col md:overflow-hidden preview-container relative">
         
-        <div className="shrink-0 mb-4 pb-2 border-b border-gray-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+        <div className="shrink-0 p-2 md:p-4 mb-2 border-b border-gray-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-[#0f172a] z-50 relative">
           <h2 className="text-xl md:text-2xl font-bold text-yellow-400">🚀 SubDeud Studio - 60FPS Engine</h2>
           <div className="flex gap-2 md:gap-4 items-center w-full sm:w-auto justify-between sm:justify-end">
             <label className="flex items-center gap-2 cursor-pointer bg-green-900/30 text-green-400 py-1 px-3 rounded-full border border-green-700 hover:bg-green-800/40 transition">
-              <span className="text-xs md:text-sm font-bold">🟢 เปิดพื้นหลังเขียว (Chroma Key)</span>
+              <span className="text-xs md:text-sm font-bold">🟢 เปิดพื้นหลังเขียว</span>
               <div className="relative">
                 <input type="checkbox" className="sr-only" checked={showGreenScreen} onChange={(e) => setShowGreenScreen(e.target.checked)} />
                 <div className={`block w-8 h-4 rounded-full transition-colors ${showGreenScreen ? 'bg-green-500' : 'bg-gray-600'}`}></div>
@@ -565,9 +604,10 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col md:grid md:grid-cols-12 gap-4 md:gap-6 md:min-h-0">
+        <div className="flex-1 flex flex-col md:grid md:grid-cols-12 gap-4 md:gap-6 md:min-h-0 p-2 md:p-4 pt-0">
           
-          <div className="md:col-span-4 lg:col-span-3 flex flex-col shrink-0 mx-auto w-full max-w-[340px] md:max-w-full md:h-full md:min-h-0 md:pr-4">
+          {/* กล่องวิดีโอ (ทำให้อยู่กับที่เวลาเลื่อนจอบนมือถือ) */}
+          <div className="md:col-span-4 lg:col-span-3 flex flex-col shrink-0 mx-auto w-full max-w-[340px] md:max-w-full md:h-full md:min-h-0 md:pr-4 sticky top-0 z-40 bg-[#0f172a] pt-2 pb-4 border-b border-gray-800 md:border-none shadow-[0_10px_20px_-10px_rgba(0,0,0,0.8)] md:shadow-none">
             <div className="flex justify-between w-full max-w-[340px] mb-2 mx-auto">
               <span className="text-gray-400 font-bold text-[10px] md:text-xs bg-gray-900 px-2 py-1 md:px-3 rounded-lg">📱 MODE: {activeMode.toUpperCase()}</span>
               <span className="text-blue-400 font-mono text-[10px] md:text-sm font-bold bg-blue-900/30 px-2 py-1 md:px-3 rounded-lg">⏱️ {currentTime.toFixed(1)} s</span>
@@ -586,6 +626,7 @@ export default function Home() {
                 )
               )}
 
+              {/* ... (ส่วน Rnd ลากฮุกและซับไตเติล เหมือนเดิม) ... */}
               {activeMode === 'hook' && activeHookForPreview && (
                 <Rnd
                   key={`hook-${activeHookForPreview.id}`} enableResizing={false} position={activeHookForPreview.position}
@@ -664,9 +705,11 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="md:col-span-8 lg:col-span-9 flex flex-col gap-4 md:gap-5 md:h-full md:min-h-0">
+          <div className="md:col-span-8 lg:col-span-9 flex flex-col gap-4 md:gap-5 md:h-full md:min-h-0 relative z-10">
             
+            {/* กล่องเมนูหลัก */}
             <div className="shrink-0 flex flex-col xl:flex-row gap-4 bg-gray-800 p-3 md:p-4 rounded-xl border border-gray-700 shadow-md">
+              {/* ... (เมนูโหมด 1 2 3 อัปโหลด Export เหมือนเดิม) ... */}
               <div className="grid grid-cols-3 gap-2 w-full xl:w-auto xl:flex">
                 <button onClick={() => setActiveMode('hook')} className={`py-2 md:py-3 px-1 md:px-4 rounded-lg font-bold text-[10px] md:text-sm transition-all ${activeMode === 'hook' ? 'bg-blue-600 shadow-lg' : 'bg-gray-900 text-gray-400 hover:bg-gray-700'}`}>🎯 โหมด 1: ฮุกอิสระ</button>
                 <button onClick={() => setActiveMode('basic')} className={`py-2 md:py-3 px-1 md:px-4 rounded-lg font-bold text-[10px] md:text-sm transition-all ${activeMode === 'basic' ? 'bg-indigo-600 shadow-lg' : 'bg-gray-900 text-gray-400 hover:bg-gray-700'}`}>📝 โหมด 2: ซับ Auto</button>
@@ -703,13 +746,12 @@ export default function Home() {
             <div className={`flex-1 flex flex-col md:grid gap-4 md:gap-6 md:min-h-0 ${activeMode === 'hook' ? 'md:grid-cols-2 lg:grid-cols-3' : 'md:grid-cols-2'}`}>
               
               {/* กล่อง 1: สคริปต์ */}
-              <div className="bg-gray-900 rounded-xl border border-gray-700 flex flex-col h-[400px] md:h-auto md:min-h-0 p-4 shadow-inner">
-                <div className="shrink-0 flex flex-wrap justify-between items-center gap-y-2 mb-3 border-b border-gray-700 pb-2 md:pb-3">
+              <div className="bg-gray-900 rounded-xl border border-gray-700 flex flex-col h-[500px] md:h-auto md:min-h-0 p-4 shadow-inner">
+                <div className="shrink-0 flex flex-wrap justify-between items-center gap-y-2 mb-2 border-b border-gray-700 pb-2 md:pb-3">
                   <div className="flex items-center gap-2">
                     <h4 className="text-sm md:text-base font-bold text-yellow-400 whitespace-nowrap">
                       {activeMode === 'hook' ? '📝 สคริปต์ฮุก (ปาดแล้วเซฟ)' : '✏️ สคริปต์ซับไตเติล'}
                     </h4>
-                    {activeMode !== 'hook' && (<span className="hidden lg:inline text-[9px] md:text-[10px] bg-indigo-900/50 text-indigo-300 px-1.5 py-0.5 rounded border border-indigo-700 whitespace-nowrap">🔗 ใช้ร่วมกัน (โหมด 2 และ 3)</span>)}
                   </div>
                   {activeMode !== 'hook' && (
                     <div className="flex items-center gap-2 ml-auto">
@@ -724,8 +766,17 @@ export default function Home() {
                     </div>
                   )}
                 </div>
+                
+                {/* 💡 คำแนะนำการแก้เวลา */}
+                {activeMode !== 'hook' && (
+                   <div className="text-[10px] md:text-xs text-blue-300 bg-blue-900/30 p-2 rounded-lg border border-blue-800 mb-3 flex items-center gap-2 shadow-sm shrink-0">
+                      <span>💡</span>
+                      <span><strong className="text-blue-200">เคล็ดลับ:</strong> คุณสามารถกดที่ตัวเลขเวลา (เริ่ม-จบ) เพื่อพิมพ์แก้ไขจังหวะให้เป๊ะขึ้นได้เลยครับ!</span>
+                   </div>
+                )}
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4">
+                  {/* ... (เนื้อหาสคริปต์ฮุกและซับไตเติล เหมือนเดิม) ... */}
                   {activeMode === 'hook' && sourceScenes.map((scene) => (
                     <div key={scene.id} className="bg-gray-800 p-3 md:p-4 rounded-xl border border-gray-700 cursor-pointer hover:border-blue-400 transition" onClick={() => jumpToTime(scene.startTime)}>
                       <div className="flex justify-between items-center mb-2 md:mb-3">
@@ -741,10 +792,10 @@ export default function Home() {
                       <div className="flex flex-wrap justify-between items-center gap-y-2 mb-2 md:mb-3">
                          <div className="flex gap-1 md:gap-2 text-[10px] md:text-xs font-mono">
                            <div className="flex items-center gap-1 bg-gray-950 p-1 md:p-1.5 rounded border border-gray-600 focus-within:border-blue-400">
-                              <span className="text-gray-500">เริ่ม:</span><input type="text" value={scene.startTime} onChange={(e) => updateAutoSceneTime(scene.id, 'startTime', e.target.value)} onClick={(e) => e.stopPropagation()} className="w-8 md:w-12 bg-transparent text-white outline-none text-right"/>s
+                              <span className="text-gray-500">เริ่ม:</span><input type="text" value={scene.startTime} onChange={(e) => updateAutoSceneTime(scene.id, 'startTime', e.target.value)} onClick={(e) => e.stopPropagation()} className="w-8 md:w-12 bg-transparent text-yellow-400 outline-none text-right font-bold"/>s
                            </div>
                            <div className="flex items-center gap-1 bg-gray-950 p-1 md:p-1.5 rounded border border-gray-600 focus-within:border-blue-400">
-                              <span className="text-gray-500">จบ:</span><input type="text" value={scene.endTime} onChange={(e) => updateAutoSceneTime(scene.id, 'endTime', e.target.value)} onClick={(e) => e.stopPropagation()} className="w-8 md:w-12 bg-transparent text-white outline-none text-right"/>s
+                              <span className="text-gray-500">จบ:</span><input type="text" value={scene.endTime} onChange={(e) => updateAutoSceneTime(scene.id, 'endTime', e.target.value)} onClick={(e) => e.stopPropagation()} className="w-8 md:w-12 bg-transparent text-yellow-400 outline-none text-right font-bold"/>s
                            </div>
                          </div>
                          <button onClick={(e) => { e.stopPropagation(); removeAutoScene(scene.id); }} className="text-[10px] md:text-xs font-bold text-red-400 bg-red-900/30 hover:bg-red-500 hover:text-white px-2 md:px-3 py-1 md:py-1.5 rounded-lg transition">ลบ</button>
@@ -779,7 +830,8 @@ export default function Home() {
               )}
 
               {/* กล่อง 3: ดีไซน์สไตล์ */}
-              <div className="bg-gray-800 rounded-xl border border-gray-700 flex flex-col h-[500px] md:h-auto md:min-h-0 p-4 shadow-lg">
+              <div className="bg-gray-800 rounded-xl border border-gray-700 flex flex-col h-[600px] md:h-auto md:min-h-0 p-4 shadow-lg">
+                {/* ... (แผงควบคุมดีไซน์เหมือนเดิมทั้งหมด) ... */}
                 <h4 className="shrink-0 text-sm md:text-base font-bold text-green-400 mb-3 border-b border-gray-700 pb-2 md:pb-3 flex justify-between items-center">
                   <span>🎨 แผงควบคุมดีไซน์ {activeMode !== 'hook' ? '(Global)' : (selectedHookId ? '- กำลังแก้ฮุก' : '- ฮุกเริ่มต้น')}</span>
                 </h4>
