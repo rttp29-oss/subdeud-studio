@@ -90,10 +90,13 @@ export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [rndScale, setRndScale] = useState(1);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
+    
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    setIsMobileDevice(isMobile);
 
     let frameId: number;
     const updateTimeSmoothly = () => {
@@ -333,6 +336,8 @@ export default function Home() {
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
 
     const scale = vidWidth / 340;
+    
+    // 🌟 ปรับ 60 FPS เต็มสูบ เพื่อให้ภาพลื่นไหลที่สุด
     const canvasStream = canvas.captureStream(60); 
     let audioTracks: MediaStreamTrack[] = [];
     try {
@@ -343,6 +348,7 @@ export default function Home() {
 
     const combinedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
     
+    // บังคับเซฟเป็นไฟล์ .mp4 เพื่อความเข้ากันได้
     let mimeType = 'video/webm;codecs=h264';
     if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('video/mp4')) {
         mimeType = 'video/mp4';
@@ -656,37 +662,24 @@ export default function Home() {
               <span className="text-blue-400 font-mono text-[10px] md:text-sm font-bold bg-blue-900/30 px-2 py-1 md:px-3 rounded-lg">⏱️ {currentTime.toFixed(1)} s</span>
             </div>
             
-            <div className={`mx-auto shrink-0 overflow-hidden border-2 border-gray-700 rounded-xl relative shadow-2xl transition-all ${showGreenScreen ? 'bg-[#00FF00]' : 'bg-black'}`}
+            <div className="mx-auto shrink-0 border-2 border-gray-700 rounded-xl relative shadow-2xl transition-all bg-black overflow-hidden"
                  style={{ width: rndScale * 340, height: rndScale * 604 }}>
                  
               <div style={{ transform: `scale(${rndScale})`, transformOrigin: 'top left', width: 340, height: 604, position: 'absolute', top: 0, left: 0 }}>
                     {videoUrl ? (
                       <>
+                        {/* 🌟 วิดีโอหลัก (ให้มีปุ่ม Controls ตามปกติเสมอ) */}
                         <video 
                           ref={videoRef} src={videoUrl} 
                           onTimeUpdate={() => { if (videoRef.current?.paused) setCurrentTime(videoRef.current.currentTime); }} 
-                          onPlay={() => setIsPlaying(true)}
-                          onPause={() => setIsPlaying(false)}
-                          className={`absolute inset-0 w-full h-full object-cover ${showGreenScreen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} 
-                          controls={!showGreenScreen}
+                          className="absolute inset-0 w-full h-full object-cover" 
+                          controls={true}
                           playsInline 
                         />
                         
-                        {/* 🌟 ปุ่ม Play อัจฉริยะสำหรับโหมดจอเขียว */}
+                        {/* 🌟 แผ่นสีเขียว: วางทับแค่วิดีโอ แต่เว้นขอบล่าง 70px ให้แถบ Controls ของระบบทำงานได้! */}
                         {showGreenScreen && (
-                           <div className="absolute inset-0 flex items-center justify-center z-10 cursor-pointer" onClick={(e) => { e.stopPropagation(); isPlaying ? videoRef.current?.pause() : videoRef.current?.play(); }}>
-                              <div className={`bg-black/60 hover:bg-black/80 text-white rounded-full p-6 backdrop-blur-sm transition-all transform scale-100 hover:scale-110 shadow-lg ${isPlaying ? 'opacity-0 hover:opacity-100' : 'opacity-100'}`}>
-                                 {isPlaying ? (
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12" viewBox="0 0 20 20" fill="currentColor">
-                                       <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                                    </svg>
-                                 ) : (
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 ml-2" viewBox="0 0 20 20" fill="currentColor">
-                                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                                    </svg>
-                                 )}
-                              </div>
-                           </div>
+                           <div className="absolute top-0 left-0 w-full bg-[#00FF00] pointer-events-none z-10" style={{ height: 'calc(100% - 70px)' }} />
                         )}
                       </>
                     ) : (
