@@ -90,13 +90,10 @@ export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [rndScale, setRndScale] = useState(1);
-  const [isMobileDevice, setIsMobileDevice] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
-    
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    setIsMobileDevice(isMobile);
 
     let frameId: number;
     const updateTimeSmoothly = () => {
@@ -336,7 +333,6 @@ export default function Home() {
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
 
     const scale = vidWidth / 340;
-    // 🌟 อัปเกรด: ดันเฟรมเรตการแคปเจอร์หน้าจอกลับมาเป็น 60 FPS ตามคำขอ
     const canvasStream = canvas.captureStream(60); 
     let audioTracks: MediaStreamTrack[] = [];
     try {
@@ -664,19 +660,37 @@ export default function Home() {
                  style={{ width: rndScale * 340, height: rndScale * 604 }}>
                  
               <div style={{ transform: `scale(${rndScale})`, transformOrigin: 'top left', width: 340, height: 604, position: 'absolute', top: 0, left: 0 }}>
-                    {!showGreenScreen && (
-                      videoUrl ? (
-                          // 🌟 คืนชีพแผงควบคุมวิดีโอแบบต้นฉบับครับ!
-                          <video 
-                            ref={videoRef} src={videoUrl} 
-                            onTimeUpdate={() => { if (videoRef.current?.paused) setCurrentTime(videoRef.current.currentTime); }} 
-                            className="absolute inset-0 w-full h-full object-cover" 
-                            controls={true} // เปิดใช้งานแถบเลื่อนแบบเต็มตัว
-                            playsInline 
-                          />
-                      ) : (
-                        <div className="absolute inset-0 bg-gray-950 flex flex-col items-center justify-center text-gray-600"><span className="text-base font-bold">รออัปโหลดคลิป...</span></div>
-                      )
+                    {videoUrl ? (
+                      <>
+                        <video 
+                          ref={videoRef} src={videoUrl} 
+                          onTimeUpdate={() => { if (videoRef.current?.paused) setCurrentTime(videoRef.current.currentTime); }} 
+                          onPlay={() => setIsPlaying(true)}
+                          onPause={() => setIsPlaying(false)}
+                          className={`absolute inset-0 w-full h-full object-cover ${showGreenScreen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} 
+                          controls={!showGreenScreen}
+                          playsInline 
+                        />
+                        
+                        {/* 🌟 ปุ่ม Play อัจฉริยะสำหรับโหมดจอเขียว */}
+                        {showGreenScreen && (
+                           <div className="absolute inset-0 flex items-center justify-center z-10 cursor-pointer" onClick={(e) => { e.stopPropagation(); isPlaying ? videoRef.current?.pause() : videoRef.current?.play(); }}>
+                              <div className={`bg-black/60 hover:bg-black/80 text-white rounded-full p-6 backdrop-blur-sm transition-all transform scale-100 hover:scale-110 shadow-lg ${isPlaying ? 'opacity-0 hover:opacity-100' : 'opacity-100'}`}>
+                                 {isPlaying ? (
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12" viewBox="0 0 20 20" fill="currentColor">
+                                       <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                                    </svg>
+                                 ) : (
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 ml-2" viewBox="0 0 20 20" fill="currentColor">
+                                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                                    </svg>
+                                 )}
+                              </div>
+                           </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="absolute inset-0 bg-gray-950 flex flex-col items-center justify-center text-gray-600"><span className="text-base font-bold">รออัปโหลดคลิป...</span></div>
                     )}
 
                     {activeMode === 'hook' && activeHookForPreview && (
