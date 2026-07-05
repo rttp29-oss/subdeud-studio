@@ -89,6 +89,7 @@ export default function Home() {
   const [isMounted, setIsMounted] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
+  const [rndScale, setRndScale] = useState(1); // 🌟 ตัวแปรแก้บั๊กลากตัวอักษรเพี้ยนบนมือถือ
 
   useEffect(() => {
     setIsMounted(true);
@@ -98,7 +99,20 @@ export default function Home() {
       frameId = requestAnimationFrame(updateTimeSmoothly);
     };
     frameId = requestAnimationFrame(updateTimeSmoothly);
-    return () => cancelAnimationFrame(frameId);
+
+    // เช็กขนาดหน้าจอเพื่อปรับความแม่นยำตอนลากตัวอักษร
+    const updateScale = () => {
+      if (window.innerWidth < 640) setRndScale(0.55);
+      else if (window.innerWidth < 768) setRndScale(0.7);
+      else setRndScale(1);
+    };
+    updateScale();
+    window.addEventListener('resize', updateScale);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      window.removeEventListener('resize', updateScale);
+    };
   }, []);
 
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -176,15 +190,27 @@ export default function Home() {
     } catch { return { start: "0", end: "3" }; }
   };
 
+  // 🌟 อัปเกรดระบบดึงข้อความจากการปาด (รองรับมือถือ 100%)
   const extractHookFromScene = (scene: any) => {
-    const selectedText = window.getSelection()?.toString().trim();
+    const textarea = document.getElementById(`textarea-${scene.id}`) as HTMLTextAreaElement;
+    let selectedText = "";
+    
+    if (textarea && textarea.selectionStart !== textarea.selectionEnd) {
+       selectedText = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd).trim();
+    }
+    if (!selectedText) {
+       selectedText = window.getSelection()?.toString().trim() || "";
+    }
+    
     if (selectedText) {
       const timeRange = parseTime(scene.time);
       const newHook = { id: Date.now(), text: selectedText, sceneId: scene.id, startTime: timeRange.start, endTime: timeRange.end, position: { x: 20, y: 150 }, style: { ...hookStyle } };
       setSavedHooks([...savedHooks, newHook]);
       window.getSelection()?.removeAllRanges();
       selectHook(newHook);
-    } else { alert("กรุณาใช้เมาส์ปาดคลุมข้อความในซีนนี้ก่อนกดเซฟฮุกครับ"); }
+    } else { 
+      alert("กรุณาปาดคลุมข้อความ (ไฮไลต์) ในช่องสคริปต์ก่อนกดปุ่ม 'เซฟฮุก' ครับ"); 
+    }
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -278,13 +304,21 @@ export default function Home() {
 
   const handleExportVideo = async () => {
     if (!videoRef.current || (!videoFile && !videoUrl)) return;
+    
+    // แจ้งเตือนข้อจำกัด iOS / Safari
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    if (isIOS || isSafari) {
+       alert("⚠️ คำเตือน: ระบบ iPhone/iPad หรือ Safari บล็อกการอัดเสียงผ่านหน้าเว็บ \n\nคลิปที่จะได้จะไม่มีเสียง แนะนำให้เปิดเว็บผ่านเบราว์เซอร์ Chrome บนคอมพิวเตอร์ เพื่อให้ได้คลิปที่สมบูรณ์ 100% ครับ");
+    }
+
     const video = videoRef.current;
     video.pause(); video.currentTime = 0;
     
     cancelRenderRef.current = false;
     setIsRendering(true);
     setIsLoading(true); 
-    setLoadingText(`🎬 ระบบกำลังเรนเดอร์ความละเอียด: ${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'} ...\n(มือถือบางรุ่นอาจไม่รองรับฟีเจอร์นี้ แนะนำให้ใช้คอมพิวเตอร์ครับ)`);
+    setLoadingText(`🎬 ระบบกำลังเรนเดอร์ความละเอียด: ${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'} ...\n(ถ้าเปอร์เซ็นต์ไม่ขยับเลย แปลว่ามือถือรุ่นนี้ไม่รองรับ ให้กดยกเลิกแล้วทำในคอมนะครับ)`);
 
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
@@ -314,7 +348,7 @@ export default function Home() {
     } catch (e) { console.error("Audio grab failed", e); }
 
     const combinedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
-    const recorderOptions = { mimeType: "video/webm;codecs=h264", videoBitsPerSecond: targetBitrate, audioBitsPerSecond: 128000 };
+    const recorderOptions = { mimeType: "video/webm;codecs=vp8", videoBitsPerSecond: targetBitrate, audioBitsPerSecond: 128000 };
     
     let mediaRecorder: MediaRecorder;
     try {
@@ -352,23 +386,37 @@ export default function Home() {
 
       const t = video.currentTime;
       let activeText = ""; let styleToUse = currentStyle;
-      let textX = vidWidth / 2; let textY = globalSubPosition.y * scale;
+      
+      // 🌟 อัปเกรดระบบคำนวณแกน X Y ตอน Export ให้เป๊ะเท่าหน้าพรีวิว 100%
+      let textX = vidWidth / 2; let textY = 0;
       let karaokeProgress = 0; let sceneStartTime = 0; let sceneEndTime = 0;
+      
+      const cleanFont = styleToUse.fontFamily.replace(/'/g, "");
+      const baseFontSize = styleToUse.fontSize * scale;
 
       if (activeMode === 'hook') {
         const activeHook = savedHooks.find(h => t >= Number(h.startTime) && t <= Number(h.endTime));
         if (activeHook) {
           activeText = activeHook.text; styleToUse = activeHook.style;
           sceneStartTime = Number(activeHook.startTime); sceneEndTime = Number(activeHook.endTime);
-          textX = activeHook.position.x * scale + (vidWidth / 2 - (170 * scale)); 
-          textY = activeHook.position.y * scale + (20 * scale);
+          
+          ctx.font = `${styleToUse.fontWeight} ${baseFontSize}px ${cleanFont}, sans-serif`;
+          const measuredWidth = ctx.measureText(activeText).width;
+          let pYPreview = styleToUse.hasBackground ? styleToUse.bgPaddingY : 0;
+          
+          textX = (activeHook.position.x * scale) + (measuredWidth / 2);
+          textY = (activeHook.position.y * scale) + (pYPreview * scale) + (baseFontSize * 1.2 / 2);
         }
       } else {
         const activeScene = autoScenes.find(s => t >= Number(s.startTime) && t <= Number(s.endTime));
         if (activeScene) {
           activeText = activeScene.text;
           sceneStartTime = Number(activeScene.startTime); sceneEndTime = Number(activeScene.endTime);
-          textX = globalSubPosition.x * scale + (170 * scale); textY = globalSubPosition.y * scale + (25 * scale);
+          
+          let pYPreview = styleToUse.hasBackground && styleToUse.karaokeEffect !== 'bgHighlight' ? styleToUse.bgPaddingY : 0;
+          
+          textX = (globalSubPosition.x * scale) + (170 * scale);
+          textY = (globalSubPosition.y * scale) + (pYPreview * scale) + (baseFontSize * 1.2 / 2);
           
           if (activeMode === 'highlight') {
              const adjustedStart = Math.max(0, sceneStartTime - 0.1);
@@ -392,14 +440,12 @@ export default function Home() {
 
         ctx.save(); ctx.globalAlpha = animAlpha; textY += animOffsetY;
 
-        const cleanFont = styleToUse.fontFamily.replace(/'/g, "");
-        const baseFontSize = styleToUse.fontSize * scale * animScale;
-        ctx.font = `${styleToUse.fontWeight} ${baseFontSize}px ${cleanFont}, sans-serif`;
+        const currentFontSize = baseFontSize * animScale;
+        ctx.font = `${styleToUse.fontWeight} ${currentFontSize}px ${cleanFont}, sans-serif`;
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
 
-        const textMetrics = ctx.measureText(activeText);
-        const textWidth = textMetrics.width;
-        const textHeight = styleToUse.fontSize * scale * animScale;
+        const textWidth = ctx.measureText(activeText).width;
+        const textHeight = currentFontSize * 1.2;
 
         const applyShadowAndStroke = () => {
           if (styleToUse.hasShadow) {
@@ -417,7 +463,7 @@ export default function Home() {
                 applyShadowAndStroke(); ctx.strokeText(activeText, textX, textY); ctx.fillStyle = "#FFFFFF"; ctx.fillText(activeText, textX, textY);
                 if (karaokeProgress > 0) {
                     ctx.save(); ctx.beginPath();
-                    ctx.rect(textX - (textWidth / 2), textY - textHeight, textWidth * karaokeProgress, textHeight * 2);
+                    ctx.rect(textX - (textWidth / 2), textY - (textHeight / 2), textWidth * karaokeProgress, textHeight);
                     ctx.clip();
                     ctx.shadowColor = "transparent"; applyShadowAndStroke(); ctx.strokeText(activeText, textX, textY); ctx.fillStyle = styleToUse.textColor; ctx.fillText(activeText, textX, textY);
                     ctx.restore();
@@ -426,13 +472,13 @@ export default function Home() {
             else if (styleToUse.karaokeEffect === 'popWipe') {
                 let kScale = 1;
                 if (elapsed < 0.25 && elapsed >= 0) { kScale = 1 + Math.sin((elapsed / 0.25) * Math.PI) * 0.15; }
-                const kFontSize = baseFontSize * kScale;
+                const kFontSize = currentFontSize * kScale;
                 ctx.font = `${styleToUse.fontWeight} ${kFontSize}px ${cleanFont}, sans-serif`;
                 
                 applyShadowAndStroke(); ctx.strokeText(activeText, textX, textY); ctx.fillStyle = "#FFFFFF"; ctx.fillText(activeText, textX, textY);
                 if (karaokeProgress > 0) {
                     ctx.save(); ctx.beginPath();
-                    ctx.rect(textX - (textWidth / 2 * kScale), textY - textHeight * kScale, textWidth * karaokeProgress * kScale, textHeight * 2 * kScale);
+                    ctx.rect(textX - (textWidth / 2 * kScale), textY - (textHeight / 2 * kScale), textWidth * karaokeProgress * kScale, textHeight * kScale);
                     ctx.clip();
                     ctx.shadowColor = "transparent"; applyShadowAndStroke(); ctx.strokeText(activeText, textX, textY); ctx.fillStyle = styleToUse.textColor; ctx.fillText(activeText, textX, textY);
                     ctx.restore();
@@ -491,7 +537,7 @@ export default function Home() {
         ctx.restore();
       }
 
-      setLoadingText(`🎬 กำลังถักทอคลิป (${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'}): ${((t / video.duration) * 100).toFixed(0)}%\n(ถ้าจาค้างนานเกินไป สามารถกดยกเลิกได้ครับ)`);
+      setLoadingText(`🎬 กำลังถักทอคลิป (${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'}): ${((t / video.duration) * 100).toFixed(0)}%\n(ถ้าค้างนาน สามารถกดยกเลิกได้ครับ)`);
       requestAnimationFrame(renderFrame);
     };
 
@@ -601,14 +647,12 @@ export default function Home() {
 
         <div className="flex-1 flex flex-col md:grid md:grid-cols-12 gap-4 md:gap-6 md:min-h-0 p-2 md:p-4 pt-0">
           
-          {/* 📱 กล่องวิดีโอ (อัปเกรดให้ย่อส่วนบนมือถือแบบ CapCut) */}
           <div className="md:col-span-4 lg:col-span-3 flex flex-col shrink-0 mx-auto w-full md:h-full md:min-h-0 md:pr-4 sticky top-0 z-40 bg-[#0f172a] pt-2 pb-2 border-b border-gray-800 md:border-none shadow-[0_10px_20px_-10px_rgba(0,0,0,0.8)] md:shadow-none">
             <div className="flex justify-between w-full max-w-[340px] mb-2 mx-auto px-4 md:px-0">
               <span className="text-gray-400 font-bold text-[10px] md:text-xs bg-gray-900 px-2 py-1 md:px-3 rounded-lg">📱 MODE: {activeMode.toUpperCase()}</span>
               <span className="text-blue-400 font-mono text-[10px] md:text-sm font-bold bg-blue-900/30 px-2 py-1 md:px-3 rounded-lg">⏱️ {currentTime.toFixed(1)} s</span>
             </div>
             
-            {/* 💡 พระเอกอยู่ตรงนี้: กรอบนี้จะย่อส่วนวิดีโอ (scale) บนมือถือ ให้เหลือ 55% เพื่อให้จอไม่ล้น */}
             <div className="relative mx-auto shrink-0 w-[187px] h-[332px] sm:w-[238px] sm:h-[423px] md:w-[340px] md:h-[604px] mb-1 md:mb-0 transition-all">
               <div className="absolute top-0 left-0 w-[340px] h-[604px] origin-top-left scale-[0.55] sm:scale-[0.7] md:scale-100">
                   
@@ -628,6 +672,7 @@ export default function Home() {
                     {activeMode === 'hook' && activeHookForPreview && (
                       <Rnd
                         key={`hook-${activeHookForPreview.id}`} enableResizing={false} position={activeHookForPreview.position}
+                        scale={rndScale} // 🌟 แก้ลากแล้วตำแหน่งเพี้ยนบนมือถือ
                         onDragStop={(e, d) => { setSavedHooks(hooks => hooks.map(h => h.id === activeHookForPreview.id ? { ...h, position: {x: d.x, y: d.y} } : h)) }}
                         bounds="parent" className="z-20 cursor-move pointer-events-auto"
                       >
@@ -648,6 +693,7 @@ export default function Home() {
                       <Rnd
                       key={`scene-${activeSceneForPreview.id}`} 
                       enableResizing={false} position={globalSubPosition}
+                      scale={rndScale} // 🌟 แก้ลากแล้วตำแหน่งเพี้ยนบนมือถือ
                       onDragStop={(e, d) => setGlobalSubPosition({ x: d.x, y: d.y })} 
                       bounds="parent" className="z-20 cursor-move pointer-events-auto"
                     >
@@ -707,7 +753,6 @@ export default function Home() {
 
           <div className="md:col-span-8 lg:col-span-9 flex flex-col gap-4 md:gap-5 md:h-full md:min-h-0 relative z-10">
             
-            {/* กล่องเมนูหลัก */}
             <div className="shrink-0 flex flex-col xl:flex-row gap-4 bg-gray-800 p-3 md:p-4 rounded-xl border border-gray-700 shadow-md">
               <div className="grid grid-cols-3 gap-2 w-full xl:w-auto xl:flex">
                 <button onClick={() => setActiveMode('hook')} className={`py-2 md:py-3 px-1 md:px-4 rounded-lg font-bold text-[10px] md:text-sm transition-all ${activeMode === 'hook' ? 'bg-blue-600 shadow-lg' : 'bg-gray-900 text-gray-400 hover:bg-gray-700'}`}>🎯 โหมด 1: ฮุกอิสระ</button>
@@ -744,7 +789,6 @@ export default function Home() {
 
             <div className={`flex-1 flex flex-col md:grid gap-4 md:gap-6 md:min-h-0 ${activeMode === 'hook' ? 'md:grid-cols-2 lg:grid-cols-3' : 'md:grid-cols-2'}`}>
               
-              {/* กล่อง 1: สคริปต์ */}
               <div className="bg-gray-900 rounded-xl border border-gray-700 flex flex-col h-[500px] md:h-auto md:min-h-0 p-4 shadow-inner">
                 <div className="shrink-0 flex flex-wrap justify-between items-center gap-y-2 mb-2 border-b border-gray-700 pb-2 md:pb-3">
                   <div className="flex items-center gap-2">
@@ -780,7 +824,7 @@ export default function Home() {
                         <span className="text-[10px] md:text-xs bg-blue-900/50 text-blue-300 py-1 px-2 md:px-3 rounded-lg font-mono font-bold">⏱️ ซีน {scene.id}</span>
                         <button onClick={(e) => { e.stopPropagation(); extractHookFromScene(scene); }} className="text-[10px] md:text-xs bg-red-600 hover:bg-red-500 text-white py-1 md:py-1.5 px-2 md:px-3 rounded-lg font-bold shadow-md">⚡ เซฟฮุก</button>
                       </div>
-                      <textarea value={scene.text} onChange={(e) => updateAutoSceneText(scene.id, e.target.value)} onClick={(e) => e.stopPropagation()} className="w-full bg-gray-950 text-gray-100 text-sm md:text-base p-2 md:p-3 rounded-lg border border-gray-600 focus:border-indigo-500 outline-none resize-none leading-relaxed font-medium" rows={2} />
+                      <textarea id={`textarea-${scene.id}`} value={scene.text} onChange={(e) => updateAutoSceneText(scene.id, e.target.value)} onClick={(e) => e.stopPropagation()} className="w-full bg-gray-950 text-gray-100 text-sm md:text-base p-2 md:p-3 rounded-lg border border-gray-600 focus:border-indigo-500 outline-none resize-none leading-relaxed font-medium" rows={2} />
                     </div>
                   ))}
 
@@ -797,14 +841,13 @@ export default function Home() {
                          </div>
                          <button onClick={(e) => { e.stopPropagation(); removeAutoScene(scene.id); }} className="text-[10px] md:text-xs font-bold text-red-400 bg-red-900/30 hover:bg-red-500 hover:text-white px-2 md:px-3 py-1 md:py-1.5 rounded-lg transition">ลบ</button>
                       </div>
-                      <textarea value={scene.text} onChange={(e) => updateAutoSceneText(scene.id, e.target.value)} onClick={(e) => { e.stopPropagation(); jumpToTime(scene.startTime); }} className="w-full bg-gray-950 text-gray-100 text-sm md:text-base p-2 md:p-3 rounded-lg border border-gray-600 focus:border-indigo-500 outline-none resize-none leading-relaxed font-medium" rows={2} />
+                      <textarea id={`textarea-${scene.id}`} value={scene.text} onChange={(e) => updateAutoSceneText(scene.id, e.target.value)} onClick={(e) => { e.stopPropagation(); jumpToTime(scene.startTime); }} className="w-full bg-gray-950 text-gray-100 text-sm md:text-base p-2 md:p-3 rounded-lg border border-gray-600 focus:border-indigo-500 outline-none resize-none leading-relaxed font-medium" rows={2} />
                     </div>
                   ))}
                   {(activeMode === 'hook' ? sourceScenes : autoScenes).length === 0 && <p className="text-[10px] md:text-sm text-gray-500 text-center mt-6">ยังไม่มีข้อมูลสคริปต์ ลองกดแทรกซีนดูสิครับ</p>}
                 </div>
               </div>
 
-              {/* กล่อง 2: ฮุกที่บันทึก (เฉพาะโหมด 1) */}
               {activeMode === 'hook' && (
                 <div className="bg-gray-900 rounded-xl border border-gray-700 flex flex-col h-[400px] md:h-auto md:min-h-0 p-4 shadow-inner">
                   <h4 className="shrink-0 text-sm md:text-base font-bold text-blue-400 mb-3 border-b border-gray-700 pb-2 md:pb-3">📌 ฮุกที่บันทึกไว้</h4>
@@ -826,7 +869,6 @@ export default function Home() {
                 </div>
               )}
 
-              {/* กล่อง 3: ดีไซน์สไตล์ */}
               <div className="bg-gray-800 rounded-xl border border-gray-700 flex flex-col h-[600px] md:h-auto md:min-h-0 p-4 shadow-lg">
                 <h4 className="shrink-0 text-sm md:text-base font-bold text-green-400 mb-3 border-b border-gray-700 pb-2 md:pb-3 flex justify-between items-center">
                   <span>🎨 แผงควบคุมดีไซน์ {activeMode !== 'hook' ? '(Global)' : (selectedHookId ? '- กำลังแก้ฮุก' : '- ฮุกเริ่มต้น')}</span>
