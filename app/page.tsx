@@ -91,13 +91,9 @@ export default function Home() {
   const [currentTime, setCurrentTime] = useState(0);
   const [rndScale, setRndScale] = useState(1);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMobileDevice, setIsMobileDevice] = useState(false); // 🌟 ตัวเช็กว่าเป็นมือถือไหม
 
   useEffect(() => {
     setIsMounted(true);
-    // เช็ก device ตอนโหลดเพื่อจัด UI
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    setIsMobileDevice(isMobile);
 
     let frameId: number;
     const updateTimeSmoothly = () => {
@@ -106,10 +102,10 @@ export default function Home() {
     };
     frameId = requestAnimationFrame(updateTimeSmoothly);
 
+    // 🌟 อัปเกรดระบบ Scale จอวิดีโอ: ให้ใหญ่เต็มที่ในคอม และย่อเฉพาะมือถือ
     const updateScale = () => {
-      if (window.innerWidth < 640) setRndScale(0.55);
-      else if (window.innerWidth < 768) setRndScale(0.7);
-      else setRndScale(1);
+      if (window.innerWidth < 768) setRndScale(0.6); // มือถือ
+      else setRndScale(1); // คอมพิวเตอร์และไอแพดใหญ่
     };
     updateScale();
     window.addEventListener('resize', updateScale);
@@ -139,9 +135,9 @@ export default function Home() {
   const [hookStyle, setHookStyle] = useState({
     fontFamily: "'Kanit', sans-serif", fontSize: 60, fontWeight: "900", textColor: "#FFD700", letterSpacing: 0,
     animationType: "popIn", karaokeEffect: "colorWipe",
-    hasStroke: true, strokeColor: "#FF0000", strokeWidth: 4,
+    hasStroke: true, strokeColor: "#000000", strokeWidth: 4,
     hasShadow: false, shadowColor: "#000000", shadowOffset: 4, shadowBlur: 4,
-    hasBackground: false, bgColor: "#000000", bgOpacity: 0.8, bgPaddingX: 15, bgPaddingY: 5, bgRadius: 10
+    hasBackground: true, bgColor: "#000000", bgOpacity: 0.8, bgPaddingX: 15, bgPaddingY: 5, bgRadius: 20
   });
 
   const [basicStyle, setBasicStyle] = useState({
@@ -154,7 +150,7 @@ export default function Home() {
 
   const [highlightStyle, setHighlightStyle] = useState({ 
     ...basicStyle, fontSize: 60, textColor: "#FFD700", hasStroke: true, strokeColor: "#000000", strokeWidth: 5,
-    animationType: "none", karaokeEffect: "scaleWord" 
+    animationType: "none", karaokeEffect: "scaleWord", hasBackground: true, bgColor: "#000000", bgOpacity: 0.9, bgRadius: 20
   });
   
   const [globalSubPosition, setGlobalSubPosition] = useState({ x: 0, y: 380 });
@@ -309,23 +305,13 @@ export default function Home() {
   const handleExportVideo = async () => {
     if (!videoRef.current || (!videoFile && !videoUrl)) return;
     
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-    
-    if (isIOS || isSafari) {
-       alert("⚠️ คำเตือน: ระบบ iPhone/iPad หรือ Safari บล็อกการอัดเสียงและเรนเดอร์ผ่านหน้าเว็บ \n\nคลิปที่ได้อาจไม่มีเสียงหรือเรนเดอร์ไม่ผ่าน แนะนำให้เปิดเว็บผ่านเบราว์เซอร์ Chrome บนคอมพิวเตอร์ เพื่อให้ได้คลิปที่สมบูรณ์ 100% ครับ");
-    }
-
     const video = videoRef.current;
     video.pause(); video.currentTime = 0;
     
     cancelRenderRef.current = false;
     setIsRendering(true);
     setIsLoading(true); 
-    
-    // 🌟 โชว์ข้อความเตือนมือถือ "เฉพาะเวลากดบนมือถือเท่านั้น"
-    const warningMsg = isMobileDevice ? "\n(ถ้าเปอร์เซ็นต์ไม่ขยับเลย แปลว่ามือถือบล็อกระบบ ให้กดยกเลิกแล้วทำในคอมนะครับ)" : "";
-    setLoadingText(`🎬 ระบบกำลังเรนเดอร์ความละเอียด: ${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'} ...${warningMsg}`);
+    setLoadingText(`🎬 ระบบกำลังเรนเดอร์ความละเอียด: ${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'} ...`);
 
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
@@ -333,26 +319,24 @@ export default function Home() {
 
     let vidWidth = video.videoWidth || 720; let vidHeight = video.videoHeight || 1280; 
     
-    // 🌟 อัปเกรด: ลด Bitrate ลงมาให้อยู่ในจุดที่เล่นบนเบราว์เซอร์ได้ลื่นไหล ไม่กระตุก
-    let targetBitrate = 8000000; // ต้นฉบับ: ปรับเหลือ 8 Mbps (ลื่นขึ้น ชัดเหมือนเดิม)
+    // 🌟 ปรับ Bitrate ความชัดตามที่คุณขอเป๊ะๆ 
+    let targetBitrate = 10000000; // ต้นฉบับ: 10 Mbps (ชัดกริบ และไม่กระตุก)
 
     if (exportQuality === "1080") {
         const ratio = vidWidth / vidHeight;
         if (vidWidth > vidHeight) { vidWidth = 1920; vidHeight = Math.round(1920 / ratio); } else { vidHeight = 1920; vidWidth = Math.round(1920 * ratio); }
-        targetBitrate = 5000000; // 1080p: 5 Mbps
+        targetBitrate = 6000000; // 1080p: 6 Mbps
     } else if (exportQuality === "720") {
         const ratio = vidWidth / vidHeight;
         if (vidWidth > vidHeight) { vidWidth = 1280; vidHeight = Math.round(1280 / ratio); } else { vidHeight = 1280; vidWidth = Math.round(1280 * ratio); }
-        targetBitrate = 2500000; // 720p: 2.5 Mbps
+        targetBitrate = 3000000; // 720p: 3 Mbps
     }
 
     canvas.width = vidWidth; canvas.height = vidHeight;
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
 
     const scale = vidWidth / 340;
-    
-    // 🌟 อัปเกรดแก้กระตุก: ดึงเฟรมที่ 30 FPS พอ (60 เฟรมหนักเครื่องเกินไป เบราว์เซอร์ดึงภาพไม่ทัน)
-    const canvasStream = canvas.captureStream(30); 
+    const canvasStream = canvas.captureStream(30); // ใช้ 30 FPS เพื่อให้ลื่นไหลเหมือนต้นฉบับ ไม่กระตุก
     let audioTracks: MediaStreamTrack[] = [];
     try {
       // @ts-ignore
@@ -362,26 +346,19 @@ export default function Home() {
 
     const combinedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
     
-    let recorderOptions: any = { videoBitsPerSecond: targetBitrate, audioBitsPerSecond: 128000 };
-    
-    if (!isIOS && !isSafari) {
-        // คอมพิวเตอร์หรือ Android: ใช้ WebM เพื่อให้ลื่นไหลและได้เสียงเต็ม 100%
-        recorderOptions.mimeType = "video/webm;codecs=vp8";
-        if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('video/webm;codecs=h264')) {
-             recorderOptions.mimeType = "video/webm;codecs=h264";
-        }
-    } else {
-        // มือถือ iOS: บังคับ MP4 ก่อน
-        if (typeof MediaRecorder !== 'undefined') {
-            recorderOptions.mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
-        }
+    // 🌟 บังคับเข้ารหัสเป็น H264 (ซึ่ง LINE / FB / iOS รองรับ) เพื่อให้ไฟล์ที่ได้เป็น MP4 ที่สมบูรณ์
+    let mimeType = 'video/webm;codecs=h264';
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('video/mp4')) {
+        mimeType = 'video/mp4';
     }
+    
+    const recorderOptions = { mimeType, videoBitsPerSecond: targetBitrate, audioBitsPerSecond: 128000 };
     
     let mediaRecorder: MediaRecorder;
     try {
         mediaRecorder = new MediaRecorder(combinedStream, recorderOptions);
     } catch (e) {
-        mediaRecorder = new MediaRecorder(combinedStream);
+        mediaRecorder = new MediaRecorder(combinedStream); // Fallback
     }
     
     const chunks: Blob[] = [];
@@ -389,10 +366,10 @@ export default function Home() {
     mediaRecorder.onstop = () => {
       if (cancelRenderRef.current) return;
       
-      const fileExt = mediaRecorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
-      const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "video/mp4" });
+      // 🌟 บังคับใส่เป็นไฟล์ .mp4 เสมอ เพื่อให้เอาไปส่งต่อใน LINE ได้ง่าย
+      const blob = new Blob(chunks, { type: "video/mp4" });
       const downloadUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = downloadUrl; a.download = `subdeud_${exportQuality}_${Date.now()}.${fileExt}`; a.click();
+      const a = document.createElement("a"); a.href = downloadUrl; a.download = `subdeud_${exportQuality}_${Date.now()}.mp4`; a.click();
       setIsLoading(false);
       setIsRendering(false);
     };
@@ -486,6 +463,16 @@ export default function Home() {
           }
         };
 
+        // 🌟 แก้บั๊กพื้นหลังหายตอน Export ในโหมดไฮไลต์!
+        if (styleToUse.hasBackground && !(activeMode === 'highlight' && styleToUse.karaokeEffect === 'bgHighlight')) {
+            const pX = styleToUse.bgPaddingX * scale * animScale; 
+            const pY = styleToUse.bgPaddingY * scale * animScale;
+            ctx.fillStyle = hexToRgba(styleToUse.bgColor, styleToUse.bgOpacity);
+            ctx.beginPath(); 
+            ctx.roundRect(textX - (textWidth/2) - pX, textY - (textHeight/2) - pY, textWidth + (pX*2), textHeight + (pY*2), styleToUse.bgRadius * scale);
+            ctx.fill();
+        }
+
         if (activeMode === 'highlight') {
             if (styleToUse.karaokeEffect === 'colorWipe') {
                 applyShadowAndStroke(); ctx.strokeText(activeText, textX, textY); ctx.fillStyle = "#FFFFFF"; ctx.fillText(activeText, textX, textY);
@@ -553,19 +540,14 @@ export default function Home() {
                 applyShadowAndStroke(); ctx.strokeText(activeText, textX, textY); ctx.fillStyle = "#FFFFFF"; ctx.fillText(activeText, textX, textY);
             }
         } else {
-            if (styleToUse.hasBackground) {
-              const pX = styleToUse.bgPaddingX * scale * animScale; const pY = styleToUse.bgPaddingY * scale * animScale;
-              ctx.fillStyle = hexToRgba(styleToUse.bgColor, styleToUse.bgOpacity);
-              ctx.beginPath(); ctx.roundRect(textX - (textWidth/2) - pX, textY - (textHeight/2) - pY, textWidth + (pX*2), textHeight + (pY*2), styleToUse.bgRadius * scale);
-              ctx.fill();
-            }
+            // ไม่ใช่ highlight โหมด
             applyShadowAndStroke(); ctx.strokeText(activeText, textX, textY); ctx.fillStyle = styleToUse.textColor; ctx.fillText(activeText, textX, textY);
         }
 
         ctx.restore();
       }
 
-      setLoadingText(`🎬 กำลังถักทอคลิป (${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'}): ${((t / video.duration) * 100).toFixed(0)}%${warningMsg}`);
+      setLoadingText(`🎬 กำลังถักทอคลิป (${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'}): ${((t / video.duration) * 100).toFixed(0)}%`);
       requestAnimationFrame(renderFrame);
     };
 
@@ -616,7 +598,7 @@ export default function Home() {
     return (
       <div className="h-screen w-full bg-[#0f172a] text-white flex flex-col items-center justify-center">
         <div className="w-12 h-12 border-4 border-gray-600 border-t-yellow-400 rounded-full animate-spin mb-4"></div>
-        <p className="text-gray-400 font-bold">กำลังเตรียมเครื่องยนต์วิดีโอ...</p>
+        <p className="text-gray-400 font-bold">กำลังเตรียมเครื่องยนต์วิดีโอ 60FPS...</p>
       </div>
     );
   }
@@ -659,7 +641,7 @@ export default function Home() {
       <div className="min-h-screen md:h-screen w-full bg-[#0f172a] text-white flex flex-col md:overflow-hidden preview-container relative">
         
         <div className="shrink-0 p-2 md:p-4 mb-2 border-b border-gray-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-[#0f172a] z-50 relative">
-          <h2 className="text-xl md:text-2xl font-bold text-yellow-400">🚀 SubDeud Studio - Engine</h2>
+          <h2 className="text-xl md:text-2xl font-bold text-yellow-400">🚀 SubDeud Studio</h2>
           <div className="flex gap-2 md:gap-4 items-center w-full sm:w-auto justify-between sm:justify-end">
             <label className="flex items-center gap-2 cursor-pointer bg-green-900/30 text-green-400 py-1 px-3 rounded-full border border-green-700 hover:bg-green-800/40 transition">
               <span className="text-xs md:text-sm font-bold">🟢 เปิดพื้นหลังเขียว</span>
@@ -681,10 +663,11 @@ export default function Home() {
               <span className="text-blue-400 font-mono text-[10px] md:text-sm font-bold bg-blue-900/30 px-2 py-1 md:px-3 rounded-lg">⏱️ {currentTime.toFixed(1)} s</span>
             </div>
             
-            <div className="relative mx-auto shrink-0 w-[187px] h-[332px] sm:w-[238px] sm:h-[423px] md:w-[340px] md:h-[604px] mb-1 md:mb-0 transition-all">
-              <div className="absolute top-0 left-0 w-[340px] h-[604px] origin-top-left scale-[0.55] sm:scale-[0.7] md:scale-100">
-                  
-                  <div className={`w-full h-full border-2 border-gray-700 rounded-xl relative overflow-hidden shadow-2xl ${showGreenScreen ? 'bg-[#00FF00]' : 'bg-black'}`}>
+            {/* 🌟 ปรับกล่องวิดีโอให้ใช้ scale คำนวณแบบ 100% สำหรับคอมพิวเตอร์ และย่อขนาดเฉพาะจอมือถือเล็กๆ เท่านั้น */}
+            <div className={`mx-auto shrink-0 overflow-hidden border-2 border-gray-700 rounded-xl relative shadow-2xl transition-all ${showGreenScreen ? 'bg-[#00FF00]' : 'bg-black'}`}
+                 style={{ width: rndScale * 340, height: rndScale * 604 }}>
+                 
+              <div style={{ transform: `scale(${rndScale})`, transformOrigin: 'top left', width: 340, height: 604, position: 'absolute', top: 0, left: 0 }}>
                     {!showGreenScreen && (
                       videoUrl ? (
                         <>
@@ -717,7 +700,6 @@ export default function Home() {
                     {activeMode === 'hook' && activeHookForPreview && (
                       <Rnd
                         key={`hook-${activeHookForPreview.id}`} enableResizing={false} position={activeHookForPreview.position}
-                        scale={rndScale} 
                         onDragStop={(e, d) => { setSavedHooks(hooks => hooks.map(h => h.id === activeHookForPreview.id ? { ...h, position: {x: d.x, y: d.y} } : h)) }}
                         bounds="parent" className="z-20 cursor-move pointer-events-auto"
                       >
@@ -738,7 +720,6 @@ export default function Home() {
                       <Rnd
                       key={`scene-${activeSceneForPreview.id}`} 
                       enableResizing={false} position={globalSubPosition}
-                      scale={rndScale} 
                       onDragStop={(e, d) => setGlobalSubPosition({ x: d.x, y: d.y })} 
                       bounds="parent" className="z-20 cursor-move pointer-events-auto"
                     >
@@ -791,7 +772,6 @@ export default function Home() {
                       </div>
                     </Rnd>
                     )}
-                  </div>
               </div>
             </div>
           </div>
