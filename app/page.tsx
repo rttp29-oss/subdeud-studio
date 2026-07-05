@@ -91,9 +91,14 @@ export default function Home() {
   const [currentTime, setCurrentTime] = useState(0);
   const [rndScale, setRndScale] = useState(1);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isMobileDevice, setIsMobileDevice] = useState(false); // 🌟 ตัวเช็กว่าเป็นมือถือไหม
 
   useEffect(() => {
     setIsMounted(true);
+    // เช็ก device ตอนโหลดเพื่อจัด UI
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    setIsMobileDevice(isMobile);
+
     let frameId: number;
     const updateTimeSmoothly = () => {
       if (videoRef.current && !videoRef.current.paused) setCurrentTime(videoRef.current.currentTime);
@@ -307,7 +312,6 @@ export default function Home() {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
     
-    // 🌟 แจ้งเตือนเฉพาะคนใช้มือถือ iOS หรือ Safari
     if (isIOS || isSafari) {
        alert("⚠️ คำเตือน: ระบบ iPhone/iPad หรือ Safari บล็อกการอัดเสียงและเรนเดอร์ผ่านหน้าเว็บ \n\nคลิปที่ได้อาจไม่มีเสียงหรือเรนเดอร์ไม่ผ่าน แนะนำให้เปิดเว็บผ่านเบราว์เซอร์ Chrome บนคอมพิวเตอร์ เพื่อให้ได้คลิปที่สมบูรณ์ 100% ครับ");
     }
@@ -318,31 +322,37 @@ export default function Home() {
     cancelRenderRef.current = false;
     setIsRendering(true);
     setIsLoading(true); 
-    setLoadingText(`🎬 ระบบกำลังเรนเดอร์ความละเอียด: ${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'} ...\n(ถ้าเปอร์เซ็นต์ไม่ขยับเลย แปลว่ามือถือบล็อกระบบนี้ ให้กดยกเลิกแล้วทำในคอมนะครับ)`);
+    
+    // 🌟 โชว์ข้อความเตือนมือถือ "เฉพาะเวลากดบนมือถือเท่านั้น"
+    const warningMsg = isMobileDevice ? "\n(ถ้าเปอร์เซ็นต์ไม่ขยับเลย แปลว่ามือถือบล็อกระบบ ให้กดยกเลิกแล้วทำในคอมนะครับ)" : "";
+    setLoadingText(`🎬 ระบบกำลังเรนเดอร์ความละเอียด: ${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'} ...${warningMsg}`);
 
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     let vidWidth = video.videoWidth || 720; let vidHeight = video.videoHeight || 1280; 
-    // 🌟 อัปเกรด: ปรับลด Bitrate ลงมาให้อยู่ในจุดที่เหมาะสม ไม่หนักเครื่องจนกระตุก
-    let targetBitrate = 15000000; // ต้นฉบับ: 15 Mbps (กำลังดี)
+    
+    // 🌟 อัปเกรด: ลด Bitrate ลงมาให้อยู่ในจุดที่เล่นบนเบราว์เซอร์ได้ลื่นไหล ไม่กระตุก
+    let targetBitrate = 8000000; // ต้นฉบับ: ปรับเหลือ 8 Mbps (ลื่นขึ้น ชัดเหมือนเดิม)
 
     if (exportQuality === "1080") {
         const ratio = vidWidth / vidHeight;
         if (vidWidth > vidHeight) { vidWidth = 1920; vidHeight = Math.round(1920 / ratio); } else { vidHeight = 1920; vidWidth = Math.round(1920 * ratio); }
-        targetBitrate = 8000000; // 1080p: 8 Mbps
+        targetBitrate = 5000000; // 1080p: 5 Mbps
     } else if (exportQuality === "720") {
         const ratio = vidWidth / vidHeight;
         if (vidWidth > vidHeight) { vidWidth = 1280; vidHeight = Math.round(1280 / ratio); } else { vidHeight = 1280; vidWidth = Math.round(1280 * ratio); }
-        targetBitrate = 4000000; // 720p: 4 Mbps
+        targetBitrate = 2500000; // 720p: 2.5 Mbps
     }
 
     canvas.width = vidWidth; canvas.height = vidHeight;
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
 
     const scale = vidWidth / 340;
-    const canvasStream = canvas.captureStream(60); 
+    
+    // 🌟 อัปเกรดแก้กระตุก: ดึงเฟรมที่ 30 FPS พอ (60 เฟรมหนักเครื่องเกินไป เบราว์เซอร์ดึงภาพไม่ทัน)
+    const canvasStream = canvas.captureStream(30); 
     let audioTracks: MediaStreamTrack[] = [];
     try {
       // @ts-ignore
@@ -352,17 +362,16 @@ export default function Home() {
 
     const combinedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
     
-    // 🌟 แยกสมอง: คืนค่าระบบออริจินัลให้คอมพิวเตอร์ และงัดข้อให้มือถือ
     let recorderOptions: any = { videoBitsPerSecond: targetBitrate, audioBitsPerSecond: 128000 };
     
     if (!isIOS && !isSafari) {
-        // สำหรับคอมพิวเตอร์: บังคับใช้ WebM H264 (เสียงมาเต็ม 100%)
-        recorderOptions.mimeType = "video/webm;codecs=h264";
-        if (typeof MediaRecorder !== 'undefined' && !MediaRecorder.isTypeSupported(recorderOptions.mimeType)) {
-             recorderOptions.mimeType = "video/webm"; // Fallback เบาๆ ให้คอมถ้าเครื่องไม่รองรับ
+        // คอมพิวเตอร์หรือ Android: ใช้ WebM เพื่อให้ลื่นไหลและได้เสียงเต็ม 100%
+        recorderOptions.mimeType = "video/webm;codecs=vp8";
+        if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('video/webm;codecs=h264')) {
+             recorderOptions.mimeType = "video/webm;codecs=h264";
         }
     } else {
-        // สำหรับมือถือ iOS: พยายามใช้ MP4 ก่อนเผื่อเครื่องยอม
+        // มือถือ iOS: บังคับ MP4 ก่อน
         if (typeof MediaRecorder !== 'undefined') {
             recorderOptions.mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
         }
@@ -556,7 +565,7 @@ export default function Home() {
         ctx.restore();
       }
 
-      setLoadingText(`🎬 กำลังถักทอคลิป (${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'}): ${((t / video.duration) * 100).toFixed(0)}%\n(ถ้าเปอร์เซ็นต์ไม่ขยับเลย แปลว่ามือถือบล็อกระบบ ให้กดยกเลิกแล้วทำในคอมนะครับ)`);
+      setLoadingText(`🎬 กำลังถักทอคลิป (${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'}): ${((t / video.duration) * 100).toFixed(0)}%${warningMsg}`);
       requestAnimationFrame(renderFrame);
     };
 
@@ -607,7 +616,7 @@ export default function Home() {
     return (
       <div className="h-screen w-full bg-[#0f172a] text-white flex flex-col items-center justify-center">
         <div className="w-12 h-12 border-4 border-gray-600 border-t-yellow-400 rounded-full animate-spin mb-4"></div>
-        <p className="text-gray-400 font-bold">กำลังเตรียมเครื่องยนต์วิดีโอ 60FPS...</p>
+        <p className="text-gray-400 font-bold">กำลังเตรียมเครื่องยนต์วิดีโอ...</p>
       </div>
     );
   }
@@ -650,7 +659,7 @@ export default function Home() {
       <div className="min-h-screen md:h-screen w-full bg-[#0f172a] text-white flex flex-col md:overflow-hidden preview-container relative">
         
         <div className="shrink-0 p-2 md:p-4 mb-2 border-b border-gray-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-[#0f172a] z-50 relative">
-          <h2 className="text-xl md:text-2xl font-bold text-yellow-400">🚀 SubDeud Studio - 60FPS Engine</h2>
+          <h2 className="text-xl md:text-2xl font-bold text-yellow-400">🚀 SubDeud Studio - Engine</h2>
           <div className="flex gap-2 md:gap-4 items-center w-full sm:w-auto justify-between sm:justify-end">
             <label className="flex items-center gap-2 cursor-pointer bg-green-900/30 text-green-400 py-1 px-3 rounded-full border border-green-700 hover:bg-green-800/40 transition">
               <span className="text-xs md:text-sm font-bold">🟢 เปิดพื้นหลังเขียว</span>
