@@ -20,7 +20,6 @@ const getWords = (text: string) => {
   return text.split(/(?=\s)|(?<=\s)/); 
 };
 
-// สกัดไฟล์เสียง
 const bufferToWav = (buffer: AudioBuffer, targetSampleRate: number) => {
   const numOfChan = 1; 
   const length = buffer.length * 2 + 44;
@@ -109,8 +108,8 @@ export default function Home() {
   
   const [isLoading, setIsLoading] = useState(false);
   const [loadingText, setLoadingText] = useState("");
-  const [isRendering, setIsRendering] = useState(false); // เช็กสถานะเรนเดอร์
-  const cancelRenderRef = useRef(false); // ตัวแปรสำหรับกดยกเลิกเรนเดอร์
+  const [isRendering, setIsRendering] = useState(false);
+  const cancelRenderRef = useRef(false);
 
   const [savedHooks, setSavedHooks] = useState<any[]>([]); 
   const [selectedHookId, setSelectedHookId] = useState<number | null>(null); 
@@ -267,7 +266,6 @@ export default function Home() {
     }));
   };
 
-  // ฟังก์ชันกดยกเลิกเรนเดอร์
   const handleCancelRender = () => {
     cancelRenderRef.current = true;
     setLoadingText("🛑 กำลังยกเลิกการเรนเดอร์...");
@@ -322,14 +320,13 @@ export default function Home() {
     try {
         mediaRecorder = new MediaRecorder(combinedStream, recorderOptions);
     } catch (e) {
-        // Fallback for browsers that don't support h264 webm
         mediaRecorder = new MediaRecorder(combinedStream);
     }
     
     const chunks: Blob[] = [];
     mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
     mediaRecorder.onstop = () => {
-      if (cancelRenderRef.current) return; // ถ้ากดยกเลิก ไม่ต้องโหลดไฟล์
+      if (cancelRenderRef.current) return;
       const blob = new Blob(chunks, { type: "video/mp4" });
       const downloadUrl = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = downloadUrl; a.download = `subdeud_${exportQuality}_${Date.now()}.mp4`; a.click();
@@ -343,7 +340,6 @@ export default function Home() {
     });
 
     const renderFrame = () => {
-      // ดักจับการกดยกเลิก
       if (cancelRenderRef.current) {
           mediaRecorder.stop();
           return;
@@ -578,7 +574,6 @@ export default function Home() {
           <div className="w-16 h-16 border-4 border-blue-500 border-t-yellow-400 rounded-full animate-spin mb-6"></div>
           <h2 className="text-xl md:text-2xl font-bold text-white text-center leading-relaxed max-w-xl whitespace-pre-line">{loadingText}</h2>
           
-          {/* ปุ่มยกเลิกเรนเดอร์ */}
           {isRendering && (
              <button onClick={handleCancelRender} className="mt-8 px-6 py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-full shadow-lg border-2 border-red-400 transition transform hover:scale-105 active:scale-95">
                ❌ ยกเลิกการเรนเดอร์
@@ -606,102 +601,107 @@ export default function Home() {
 
         <div className="flex-1 flex flex-col md:grid md:grid-cols-12 gap-4 md:gap-6 md:min-h-0 p-2 md:p-4 pt-0">
           
-          {/* กล่องวิดีโอ (ทำให้อยู่กับที่เวลาเลื่อนจอบนมือถือ) */}
-          <div className="md:col-span-4 lg:col-span-3 flex flex-col shrink-0 mx-auto w-full max-w-[340px] md:max-w-full md:h-full md:min-h-0 md:pr-4 sticky top-0 z-40 bg-[#0f172a] pt-2 pb-4 border-b border-gray-800 md:border-none shadow-[0_10px_20px_-10px_rgba(0,0,0,0.8)] md:shadow-none">
-            <div className="flex justify-between w-full max-w-[340px] mb-2 mx-auto">
+          {/* 📱 กล่องวิดีโอ (อัปเกรดให้ย่อส่วนบนมือถือแบบ CapCut) */}
+          <div className="md:col-span-4 lg:col-span-3 flex flex-col shrink-0 mx-auto w-full md:h-full md:min-h-0 md:pr-4 sticky top-0 z-40 bg-[#0f172a] pt-2 pb-2 border-b border-gray-800 md:border-none shadow-[0_10px_20px_-10px_rgba(0,0,0,0.8)] md:shadow-none">
+            <div className="flex justify-between w-full max-w-[340px] mb-2 mx-auto px-4 md:px-0">
               <span className="text-gray-400 font-bold text-[10px] md:text-xs bg-gray-900 px-2 py-1 md:px-3 rounded-lg">📱 MODE: {activeMode.toUpperCase()}</span>
               <span className="text-blue-400 font-mono text-[10px] md:text-sm font-bold bg-blue-900/30 px-2 py-1 md:px-3 rounded-lg">⏱️ {currentTime.toFixed(1)} s</span>
             </div>
             
-            <div className={`w-full max-w-[340px] aspect-[9/16] border-2 border-gray-700 rounded-xl relative overflow-hidden shadow-2xl mx-auto shrink-0 ${showGreenScreen ? 'bg-[#00FF00]' : 'bg-black'}`}>
-              {!showGreenScreen && (
-                videoUrl ? (
-                  <video 
-                    ref={videoRef} src={videoUrl} 
-                    onTimeUpdate={() => { if (videoRef.current?.paused) setCurrentTime(videoRef.current.currentTime); }} 
-                    className="absolute inset-0 w-full h-full object-cover" controls playsInline 
-                  />
-                ) : (
-                  <div className="absolute inset-0 bg-gray-950 flex flex-col items-center justify-center text-gray-600"><span className="text-sm md:text-base">รออัปโหลดคลิป...</span></div>
-                )
-              )}
+            {/* 💡 พระเอกอยู่ตรงนี้: กรอบนี้จะย่อส่วนวิดีโอ (scale) บนมือถือ ให้เหลือ 55% เพื่อให้จอไม่ล้น */}
+            <div className="relative mx-auto shrink-0 w-[187px] h-[332px] sm:w-[238px] sm:h-[423px] md:w-[340px] md:h-[604px] mb-1 md:mb-0 transition-all">
+              <div className="absolute top-0 left-0 w-[340px] h-[604px] origin-top-left scale-[0.55] sm:scale-[0.7] md:scale-100">
+                  
+                  <div className={`w-full h-full border-2 border-gray-700 rounded-xl relative overflow-hidden shadow-2xl ${showGreenScreen ? 'bg-[#00FF00]' : 'bg-black'}`}>
+                    {!showGreenScreen && (
+                      videoUrl ? (
+                        <video 
+                          ref={videoRef} src={videoUrl} 
+                          onTimeUpdate={() => { if (videoRef.current?.paused) setCurrentTime(videoRef.current.currentTime); }} 
+                          className="absolute inset-0 w-full h-full object-cover" controls playsInline 
+                        />
+                      ) : (
+                        <div className="absolute inset-0 bg-gray-950 flex flex-col items-center justify-center text-gray-600"><span className="text-base font-bold">รออัปโหลดคลิป...</span></div>
+                      )
+                    )}
 
-              {/* ... (ส่วน Rnd ลากฮุกและซับไตเติล เหมือนเดิม) ... */}
-              {activeMode === 'hook' && activeHookForPreview && (
-                <Rnd
-                  key={`hook-${activeHookForPreview.id}`} enableResizing={false} position={activeHookForPreview.position}
-                  onDragStop={(e, d) => { setSavedHooks(hooks => hooks.map(h => h.id === activeHookForPreview.id ? { ...h, position: {x: d.x, y: d.y} } : h)) }}
-                  bounds="parent" className="z-20 cursor-move pointer-events-auto"
-                >
-                  <div className={`dynamic-hook-text whitespace-nowrap anim-${hookStyle.animationType}`}
-                    style={{
-                      fontFamily: activeHookForPreview.style.fontFamily, fontSize: `${activeHookForPreview.style.fontSize}px`, fontWeight: activeHookForPreview.style.fontWeight, color: activeHookForPreview.style.textColor,
-                      textShadow: generateTextShadow(activeHookForPreview.style),
-                      backgroundColor: activeHookForPreview.style.hasBackground ? hexToRgba(activeHookForPreview.style.bgColor, activeHookForPreview.style.bgOpacity) : 'transparent',
-                      padding: activeHookForPreview.style.hasBackground ? `${activeHookForPreview.style.bgPaddingY}px ${activeHookForPreview.style.bgPaddingX}px` : '0px', borderRadius: activeHookForPreview.style.hasBackground ? `${activeHookForPreview.style.bgRadius}px` : '0px'
-                    }}
-                  >
-                    {activeHookForPreview.text}
+                    {activeMode === 'hook' && activeHookForPreview && (
+                      <Rnd
+                        key={`hook-${activeHookForPreview.id}`} enableResizing={false} position={activeHookForPreview.position}
+                        onDragStop={(e, d) => { setSavedHooks(hooks => hooks.map(h => h.id === activeHookForPreview.id ? { ...h, position: {x: d.x, y: d.y} } : h)) }}
+                        bounds="parent" className="z-20 cursor-move pointer-events-auto"
+                      >
+                        <div className={`dynamic-hook-text whitespace-nowrap anim-${hookStyle.animationType}`}
+                          style={{
+                            fontFamily: activeHookForPreview.style.fontFamily, fontSize: `${activeHookForPreview.style.fontSize}px`, fontWeight: activeHookForPreview.style.fontWeight, color: activeHookForPreview.style.textColor,
+                            textShadow: generateTextShadow(activeHookForPreview.style),
+                            backgroundColor: activeHookForPreview.style.hasBackground ? hexToRgba(activeHookForPreview.style.bgColor, activeHookForPreview.style.bgOpacity) : 'transparent',
+                            padding: activeHookForPreview.style.hasBackground ? `${activeHookForPreview.style.bgPaddingY}px ${activeHookForPreview.style.bgPaddingX}px` : '0px', borderRadius: activeHookForPreview.style.hasBackground ? `${activeHookForPreview.style.bgRadius}px` : '0px'
+                          }}
+                        >
+                          {activeHookForPreview.text}
+                        </div>
+                      </Rnd>
+                    )}
+
+                    {(activeMode === 'basic' || activeMode === 'highlight') && activeSceneForPreview && (
+                      <Rnd
+                      key={`scene-${activeSceneForPreview.id}`} 
+                      enableResizing={false} position={globalSubPosition}
+                      onDragStop={(e, d) => setGlobalSubPosition({ x: d.x, y: d.y })} 
+                      bounds="parent" className="z-20 cursor-move pointer-events-auto"
+                    >
+                      <div className="w-[340px] flex justify-center items-center">
+                        <div className={`dynamic-hook-text anim-${currentStyle.animationType}`} 
+                          style={{
+                            fontFamily: currentStyle.fontFamily, fontSize: `${currentStyle.fontSize}px`, fontWeight: currentStyle.fontWeight,
+                            backgroundColor: currentStyle.hasBackground && currentStyle.karaokeEffect !== 'bgHighlight' ? hexToRgba(currentStyle.bgColor, currentStyle.bgOpacity) : 'transparent',
+                            padding: currentStyle.hasBackground && currentStyle.karaokeEffect !== 'bgHighlight' ? `${currentStyle.bgPaddingY}px ${currentStyle.bgPaddingX}px` : '0px', 
+                            borderRadius: currentStyle.hasBackground && currentStyle.karaokeEffect !== 'bgHighlight' ? `${currentStyle.bgRadius}px` : '0px',
+                            transform: activeMode === 'highlight' && currentStyle.karaokeEffect === 'popWipe' ? `scale(${previewScalePop})` : 'none',
+                            transformOrigin: 'center center'
+                          }}
+                        >
+                          {activeMode === 'highlight' && currentStyle.karaokeEffect === 'bgHighlight' && (
+                            <div style={{ position: 'relative', display: 'inline-block', padding: '5px 15px' }}>
+                                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: hexToRgba(currentStyle.textColor, 0.9), width: `${previewKaraokeProgress * 100}%`, borderRadius: `${currentStyle.bgRadius}px`, zIndex: -1 }} />
+                                <span style={{ color: '#FFFFFF', textShadow: generateTextShadow(currentStyle), position: 'relative', zIndex: 1 }}>{activeSceneForPreview.text}</span>
+                            </div>
+                          )}
+
+                          {activeMode === 'highlight' && (currentStyle.karaokeEffect === 'colorWipe' || currentStyle.karaokeEffect === 'popWipe') && (
+                            <div style={{ position: 'relative', display: 'inline-block' }}>
+                                <span style={{ color: '#FFFFFF', textShadow: generateTextShadow(currentStyle) }}>{activeSceneForPreview.text}</span>
+                                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, color: currentStyle.textColor, width: `${previewKaraokeProgress * 100}%`, overflow: 'hidden', whiteSpace: 'nowrap', textShadow: generateTextShadow(currentStyle), zIndex: 2 }}>
+                                  {activeSceneForPreview.text}
+                                </div>
+                            </div>
+                          )}
+
+                          {activeMode === 'highlight' && currentStyle.karaokeEffect === 'scaleWord' && (
+                            <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '2px' }}>
+                                {getWords(activeSceneForPreview.text).map((word, i) => {
+                                  const totalDur = (Number(activeSceneForPreview.endTime) - Number(activeSceneForPreview.startTime)) * 0.85;
+                                  const wordDur = totalDur > 0 ? totalDur / getWords(activeSceneForPreview.text).length : 0.1;
+                                  const wStart = Number(activeSceneForPreview.startTime) + (i * wordDur);
+                                  const wEnd = wStart + wordDur;
+                                  let wScale = 1; let wColor = "#FFFFFF"; 
+                                  if (currentTime >= wStart && currentTime <= wEnd && wordDur > 0) {
+                                      wScale = 1 + Math.sin(((currentTime - wStart) / wordDur) * Math.PI) * 0.2; 
+                                      wColor = currentStyle.textColor;
+                                  } else if (currentTime > wEnd) { wColor = currentStyle.textColor; }
+                                  return (<span key={i} style={{ display: 'inline-block', transform: `scale(${wScale})`, transformOrigin: 'bottom center', color: wColor, textShadow: generateTextShadow(currentStyle), whiteSpace: 'pre' }}>{word}</span>);
+                                })}
+                            </div>
+                          )}
+
+                          {activeMode === 'basic' && (<span style={{ color: currentStyle.textColor, textShadow: generateTextShadow(currentStyle) }}>{activeSceneForPreview.text}</span>)}
+                        </div>
+                      </div>
+                    </Rnd>
+                    )}
                   </div>
-                </Rnd>
-              )}
-
-              {(activeMode === 'basic' || activeMode === 'highlight') && activeSceneForPreview && (
-                 <Rnd
-                 key={`scene-${activeSceneForPreview.id}`} 
-                 enableResizing={false} position={globalSubPosition}
-                 onDragStop={(e, d) => setGlobalSubPosition({ x: d.x, y: d.y })} 
-                 bounds="parent" className="z-20 cursor-move pointer-events-auto"
-               >
-                 <div className="w-[340px] flex justify-center items-center">
-                   <div className={`dynamic-hook-text anim-${currentStyle.animationType}`} 
-                     style={{
-                       fontFamily: currentStyle.fontFamily, fontSize: `${currentStyle.fontSize}px`, fontWeight: currentStyle.fontWeight,
-                       backgroundColor: currentStyle.hasBackground && currentStyle.karaokeEffect !== 'bgHighlight' ? hexToRgba(currentStyle.bgColor, currentStyle.bgOpacity) : 'transparent',
-                       padding: currentStyle.hasBackground && currentStyle.karaokeEffect !== 'bgHighlight' ? `${currentStyle.bgPaddingY}px ${currentStyle.bgPaddingX}px` : '0px', 
-                       borderRadius: currentStyle.hasBackground && currentStyle.karaokeEffect !== 'bgHighlight' ? `${currentStyle.bgRadius}px` : '0px',
-                       transform: activeMode === 'highlight' && currentStyle.karaokeEffect === 'popWipe' ? `scale(${previewScalePop})` : 'none',
-                       transformOrigin: 'center center'
-                     }}
-                   >
-                     {activeMode === 'highlight' && currentStyle.karaokeEffect === 'bgHighlight' && (
-                       <div style={{ position: 'relative', display: 'inline-block', padding: '5px 15px' }}>
-                          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: hexToRgba(currentStyle.textColor, 0.9), width: `${previewKaraokeProgress * 100}%`, borderRadius: `${currentStyle.bgRadius}px`, zIndex: -1 }} />
-                          <span style={{ color: '#FFFFFF', textShadow: generateTextShadow(currentStyle), position: 'relative', zIndex: 1 }}>{activeSceneForPreview.text}</span>
-                       </div>
-                     )}
-
-                     {activeMode === 'highlight' && (currentStyle.karaokeEffect === 'colorWipe' || currentStyle.karaokeEffect === 'popWipe') && (
-                       <div style={{ position: 'relative', display: 'inline-block' }}>
-                          <span style={{ color: '#FFFFFF', textShadow: generateTextShadow(currentStyle) }}>{activeSceneForPreview.text}</span>
-                          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, color: currentStyle.textColor, width: `${previewKaraokeProgress * 100}%`, overflow: 'hidden', whiteSpace: 'nowrap', textShadow: generateTextShadow(currentStyle), zIndex: 2 }}>
-                            {activeSceneForPreview.text}
-                          </div>
-                       </div>
-                     )}
-
-                     {activeMode === 'highlight' && currentStyle.karaokeEffect === 'scaleWord' && (
-                       <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '2px' }}>
-                          {getWords(activeSceneForPreview.text).map((word, i) => {
-                             const totalDur = (Number(activeSceneForPreview.endTime) - Number(activeSceneForPreview.startTime)) * 0.85;
-                             const wordDur = totalDur > 0 ? totalDur / getWords(activeSceneForPreview.text).length : 0.1;
-                             const wStart = Number(activeSceneForPreview.startTime) + (i * wordDur);
-                             const wEnd = wStart + wordDur;
-                             let wScale = 1; let wColor = "#FFFFFF"; 
-                             if (currentTime >= wStart && currentTime <= wEnd && wordDur > 0) {
-                                wScale = 1 + Math.sin(((currentTime - wStart) / wordDur) * Math.PI) * 0.2; 
-                                wColor = currentStyle.textColor;
-                             } else if (currentTime > wEnd) { wColor = currentStyle.textColor; }
-                             return (<span key={i} style={{ display: 'inline-block', transform: `scale(${wScale})`, transformOrigin: 'bottom center', color: wColor, textShadow: generateTextShadow(currentStyle), whiteSpace: 'pre' }}>{word}</span>);
-                          })}
-                       </div>
-                     )}
-
-                     {activeMode === 'basic' && (<span style={{ color: currentStyle.textColor, textShadow: generateTextShadow(currentStyle) }}>{activeSceneForPreview.text}</span>)}
-                   </div>
-                 </div>
-               </Rnd>
-              )}
+              </div>
             </div>
           </div>
 
@@ -709,7 +709,6 @@ export default function Home() {
             
             {/* กล่องเมนูหลัก */}
             <div className="shrink-0 flex flex-col xl:flex-row gap-4 bg-gray-800 p-3 md:p-4 rounded-xl border border-gray-700 shadow-md">
-              {/* ... (เมนูโหมด 1 2 3 อัปโหลด Export เหมือนเดิม) ... */}
               <div className="grid grid-cols-3 gap-2 w-full xl:w-auto xl:flex">
                 <button onClick={() => setActiveMode('hook')} className={`py-2 md:py-3 px-1 md:px-4 rounded-lg font-bold text-[10px] md:text-sm transition-all ${activeMode === 'hook' ? 'bg-blue-600 shadow-lg' : 'bg-gray-900 text-gray-400 hover:bg-gray-700'}`}>🎯 โหมด 1: ฮุกอิสระ</button>
                 <button onClick={() => setActiveMode('basic')} className={`py-2 md:py-3 px-1 md:px-4 rounded-lg font-bold text-[10px] md:text-sm transition-all ${activeMode === 'basic' ? 'bg-indigo-600 shadow-lg' : 'bg-gray-900 text-gray-400 hover:bg-gray-700'}`}>📝 โหมด 2: ซับ Auto</button>
@@ -767,7 +766,6 @@ export default function Home() {
                   )}
                 </div>
                 
-                {/* 💡 คำแนะนำการแก้เวลา */}
                 {activeMode !== 'hook' && (
                    <div className="text-[10px] md:text-xs text-blue-300 bg-blue-900/30 p-2 rounded-lg border border-blue-800 mb-3 flex items-center gap-2 shadow-sm shrink-0">
                       <span>💡</span>
@@ -776,7 +774,6 @@ export default function Home() {
                 )}
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4">
-                  {/* ... (เนื้อหาสคริปต์ฮุกและซับไตเติล เหมือนเดิม) ... */}
                   {activeMode === 'hook' && sourceScenes.map((scene) => (
                     <div key={scene.id} className="bg-gray-800 p-3 md:p-4 rounded-xl border border-gray-700 cursor-pointer hover:border-blue-400 transition" onClick={() => jumpToTime(scene.startTime)}>
                       <div className="flex justify-between items-center mb-2 md:mb-3">
@@ -831,7 +828,6 @@ export default function Home() {
 
               {/* กล่อง 3: ดีไซน์สไตล์ */}
               <div className="bg-gray-800 rounded-xl border border-gray-700 flex flex-col h-[600px] md:h-auto md:min-h-0 p-4 shadow-lg">
-                {/* ... (แผงควบคุมดีไซน์เหมือนเดิมทั้งหมด) ... */}
                 <h4 className="shrink-0 text-sm md:text-base font-bold text-green-400 mb-3 border-b border-gray-700 pb-2 md:pb-3 flex justify-between items-center">
                   <span>🎨 แผงควบคุมดีไซน์ {activeMode !== 'hook' ? '(Global)' : (selectedHookId ? '- กำลังแก้ฮุก' : '- ฮุกเริ่มต้น')}</span>
                 </h4>
