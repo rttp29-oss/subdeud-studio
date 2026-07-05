@@ -90,7 +90,7 @@ export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [rndScale, setRndScale] = useState(1);
-  const [isPlaying, setIsPlaying] = useState(false); // 🌟 สถานะปุ่มกดเล่นวิดีโอใหม่
+  const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -306,8 +306,10 @@ export default function Home() {
     
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    
+    // 🌟 แจ้งเตือนเฉพาะคนใช้มือถือ iOS หรือ Safari
     if (isIOS || isSafari) {
-       alert("⚠️ คำเตือน: ระบบ iPhone/iPad หรือ Safari บล็อกการอัดเสียงและเรนเดอร์ผ่านหน้าเว็บ \n\nคลิปที่ได้อาจไม่มีเสียงหรือเรนเดอร์ไม่ผ่าน แนะนำให้เปิดเว็บผ่าน Google Chrome บนคอมพิวเตอร์ เพื่อให้ได้คลิปที่สมบูรณ์ 100% ครับ");
+       alert("⚠️ คำเตือน: ระบบ iPhone/iPad หรือ Safari บล็อกการอัดเสียงและเรนเดอร์ผ่านหน้าเว็บ \n\nคลิปที่ได้อาจไม่มีเสียงหรือเรนเดอร์ไม่ผ่าน แนะนำให้เปิดเว็บผ่านเบราว์เซอร์ Chrome บนคอมพิวเตอร์ เพื่อให้ได้คลิปที่สมบูรณ์ 100% ครับ");
     }
 
     const video = videoRef.current;
@@ -322,15 +324,18 @@ export default function Home() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let vidWidth = video.videoWidth || 720; let vidHeight = video.videoHeight || 1280; let targetBitrate = 10000000; 
+    let vidWidth = video.videoWidth || 720; let vidHeight = video.videoHeight || 1280; 
+    // 🌟 อัปเกรด: ปรับลด Bitrate ลงมาให้อยู่ในจุดที่เหมาะสม ไม่หนักเครื่องจนกระตุก
+    let targetBitrate = 15000000; // ต้นฉบับ: 15 Mbps (กำลังดี)
+
     if (exportQuality === "1080") {
         const ratio = vidWidth / vidHeight;
         if (vidWidth > vidHeight) { vidWidth = 1920; vidHeight = Math.round(1920 / ratio); } else { vidHeight = 1920; vidWidth = Math.round(1920 * ratio); }
-        targetBitrate = 7500000; 
+        targetBitrate = 8000000; // 1080p: 8 Mbps
     } else if (exportQuality === "720") {
         const ratio = vidWidth / vidHeight;
         if (vidWidth > vidHeight) { vidWidth = 1280; vidHeight = Math.round(1280 / ratio); } else { vidHeight = 1280; vidWidth = Math.round(1280 * ratio); }
-        targetBitrate = 3500000; 
+        targetBitrate = 4000000; // 720p: 4 Mbps
     }
 
     canvas.width = vidWidth; canvas.height = vidHeight;
@@ -347,14 +352,21 @@ export default function Home() {
 
     const combinedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
     
-    // 🌟 ระบบงัดข้อกับ iOS (บังคับใช้ MP4 ถ้าทำได้)
-    let mimeType = 'video/webm;codecs=vp8';
-    if (typeof MediaRecorder !== 'undefined') {
-        if (MediaRecorder.isTypeSupported('video/mp4')) mimeType = 'video/mp4'; 
-        else if (MediaRecorder.isTypeSupported('video/webm;codecs=h264')) mimeType = 'video/webm;codecs=h264';
-    }
+    // 🌟 แยกสมอง: คืนค่าระบบออริจินัลให้คอมพิวเตอร์ และงัดข้อให้มือถือ
+    let recorderOptions: any = { videoBitsPerSecond: targetBitrate, audioBitsPerSecond: 128000 };
     
-    const recorderOptions = { mimeType, videoBitsPerSecond: targetBitrate, audioBitsPerSecond: 128000 };
+    if (!isIOS && !isSafari) {
+        // สำหรับคอมพิวเตอร์: บังคับใช้ WebM H264 (เสียงมาเต็ม 100%)
+        recorderOptions.mimeType = "video/webm;codecs=h264";
+        if (typeof MediaRecorder !== 'undefined' && !MediaRecorder.isTypeSupported(recorderOptions.mimeType)) {
+             recorderOptions.mimeType = "video/webm"; // Fallback เบาๆ ให้คอมถ้าเครื่องไม่รองรับ
+        }
+    } else {
+        // สำหรับมือถือ iOS: พยายามใช้ MP4 ก่อนเผื่อเครื่องยอม
+        if (typeof MediaRecorder !== 'undefined') {
+            recorderOptions.mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
+        }
+    }
     
     let mediaRecorder: MediaRecorder;
     try {
@@ -544,7 +556,7 @@ export default function Home() {
         ctx.restore();
       }
 
-      setLoadingText(`🎬 กำลังถักทอคลิป (${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'}): ${((t / video.duration) * 100).toFixed(0)}%\n(ถ้าเปอร์เซ็นต์ไม่ขยับเลย แปลว่ามือถือรุ่นนี้บล็อกระบบ ให้กดยกเลิกแล้วทำในคอมนะครับ)`);
+      setLoadingText(`🎬 กำลังถักทอคลิป (${exportQuality === 'original' ? 'ต้นฉบับ' : exportQuality+'p'}): ${((t / video.duration) * 100).toFixed(0)}%\n(ถ้าเปอร์เซ็นต์ไม่ขยับเลย แปลว่ามือถือบล็อกระบบ ให้กดยกเลิกแล้วทำในคอมนะครับ)`);
       requestAnimationFrame(renderFrame);
     };
 
@@ -673,12 +685,11 @@ export default function Home() {
                             onPlay={() => setIsPlaying(true)}
                             onPause={() => setIsPlaying(false)}
                             className="absolute inset-0 w-full h-full object-cover cursor-pointer" 
-                            controls={false} /* 🌟 ซ่อนปุ่มเดิมที่เพี้ยนบนมือถือทิ้งไป */
+                            controls={false}
                             playsInline 
                             onClick={(e) => isPlaying ? e.currentTarget.pause() : e.currentTarget.play()}
                           />
                           
-                          {/* 🌟 ปุ่ม Play อัจฉริยะ โชว์ขึ้นมาเมื่อกดหยุด */}
                           {!isPlaying && (
                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10" onClick={(e) => { e.stopPropagation(); videoRef.current?.play(); }}>
                                 <div className="bg-black/60 hover:bg-black/80 text-white rounded-full p-6 backdrop-blur-sm transition-all transform scale-100 hover:scale-110 pointer-events-auto cursor-pointer shadow-lg">
